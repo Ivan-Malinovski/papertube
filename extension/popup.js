@@ -173,31 +173,198 @@ document.addEventListener('DOMContentLoaded', async () => {
         const preset = presetSelect.value;
         chrome.storage.local.set({ lastPreset: preset });
 
-        summarizeBtn.disabled = true;
-        summarizeBtn.textContent = "Processing...";
-        status.textContent = "Sending to server...";
-        status.className = "status";
+        const defaultContent = document.getElementById('btn-default-content');
+        const loadingContent = document.getElementById('btn-loading-content');
+        const statusContainer = document.getElementById('status-container');
 
-        chrome.runtime.sendMessage({
-            action: 'summarizeBackground',
-            serverUrl,
-            url: currentTab.url,
-            preset: preset,
-            token: data.auth_token
-        }, (response) => {
-            if (response && response.success) {
-                status.textContent = "Summarized successfully!";
-                status.className = "status success";
-                summarizeBtn.textContent = "Summarize Again";
-                summarizeBtn.disabled = false;
-                checkSummary(currentTab.url, data.auth_token);
-            } else {
-                status.textContent = "Failed. Opening in tab...";
-                status.className = "status error";
-                window.open(`${serverUrl}/?url=${encodeURIComponent(currentTab.url)}&auto=1`, '_blank');
-                summarizeBtn.disabled = false;
-                summarizeBtn.textContent = "Summarize Now";
+        // Setup button for loading state
+        summarizeBtn.disabled = true;
+        defaultContent.style.display = 'none';
+        loadingContent.style.display = 'flex';
+        loadingContent.classList.remove('hidden');
+
+        // Initialize stage tracking
+        const steps = [
+            "Loading video metadata...",
+            "Extracting transcript...",
+            "Summarizing..."
+        ];
+        let currentStep = 0;
+        let stageInterval = null;
+        let typingInterval = null;
+
+        const updateStage = () => {
+            if (currentStep < steps.length) {
+                statusContainer.innerHTML = `<span class="status-anim-text active">${steps[currentStep]}</span>`;
+                currentStep++;
             }
+        };
+
+        // Start stage animation
+        updateStage();
+        stageInterval = setInterval(() => {
+            if (currentStep < steps.length) {
+                updateStage();
+            } else {
+                clearInterval(stageInterval);
+            }
+        }, 2500);
+
+        // Setup streaming display
+        const textBuffer = { current: "" };
+        const displayBuffer = { current: "" };
+        let isStreamingDone = false;
+        let currentSummaryId = null;
+
+        videoTitle.textContent = "Processing video...";
+        videoChannel.textContent = "";
+        summaryText.innerHTML = '<div class="streaming-status"><div class="dot"></div> Generating summary...</div><div class="summary-placeholder"></div><span class="typing-line"></span>';
+        const summaryPlaceholder = summaryText.querySelector('.summary-placeholder');
+        viewFullBtn.classList.add('hidden');
+
+        // Typing effect function
+        const updateTyping = () => {
+            if (textBuffer.current.length > 0) {
+                let charsToTake;
+                if (textBuffer.current.length > 50) charsToTake = 20;
+                else if (textBuffer.current.length > 20) charsToTake = 10;
+                else charsToTake = 3;
+
+                const chunk = textBuffer.current.substring(0, charsToTake);
+                textBuffer.current = textBuffer.current.substring(charsToTake);
+                displayBuffer.current += chunk;
+
+                if (typeof marked !== 'undefined') {
+                    summaryPlaceholder.innerHTML = marked.parse(displayBuffer.current);
+                } else {
+                    summaryPlaceholder.textContent = displayBuffer.current;
+                }
+            } else if (isStreamingDone) {
+                clearInterval(typingInterval);
+                onStreamingComplete(currentSummaryId);
+            }
+        };
+
+        function onStreamingComplete(summaryId) {
+            if (summaryId) {
+                currentSummaryId = summaryId;
+                viewFullBtn.href = `${serverUrl}/summary/${summaryId}`;
+                viewFullBtn.classList.remove('hidden');
+            }
+
+            const typingLine = summaryText.querySelector('.typing-line');
+            if (typingLine) typingLine.remove();
+
+            const streamHeader = summaryText.querySelector('.streaming-status');
+            if (streamHeader) {
+                streamHeader.innerHTML = '<span style="color: #10b981;">✓ Summary Complete</span>';
+            }
+
+            // Reset button
+            clearInterval(stageInterval);
+            statusContainer.innerHTML = '<span class="status-anim-text active">Done!</span>';
+            setTimeout(() => {
+                summarizeBtn.disabled = false;
+                defaultContent.textContent = "Summarize Again";
+                defaultContent.style.display = 'inline';
+                loadingContent.style.display = 'none';
+                loadingContent.classList.add('hidden');
+            }, 1500);
+        }
+
+        // Start typing interval
+        typingInterval = setInterval(updateTyping, 50);
+
+        // Make the request directly from popup (not via background)
+        const formData = new URLSearchParams();
+        formData.append('url', currentTab.url);
+        formData.append('preset', preset);
+
+        fetch(`${serverUrl}/summarize/stream`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${data.auth_token}`
+            },
+            body: formData
+        })
+        .then(response => {
+            if (!response.ok) {
+                return response.json().then(err => { throw new Error(err.error || `Server returned ${response.status}`); });
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let isFirstChunk = true;
+            let summaryId = null;
+
+            function readChunk() {
+                return reader.read().then(({ done, value }) => {
+                    if (done) {
+                        isStreamingDone = true;
+                        currentSummaryId = summaryId;
+                        return;
+                    }
+
+                    const chunk = decoder.decode(value, { stream: true });
+
+                    if (isFirstChunk) {
+                        // First chunk contains metadata JSON + summary text
+                        const newlineIndex = chunk.indexOf('\n');
+                        if (newlineIndex > 0) {
+                            try {
+                                const metadataJson = chunk.substring(0, newlineIndex);
+                                const metadata = JSON.parse(metadataJson);
+                                if (metadata.type === 'metadata') {
+                                    // Clear stage animation - now summarizing
+                                    clearInterval(stageInterval);
+                                    statusContainer.innerHTML = '<span class="status-anim-text active">Summarizing...</span>';
+
+                                    // Update video info with metadata
+                                    videoTitle.textContent = metadata.video_title || "Loading...";
+                                    videoChannel.textContent = metadata.channel_name || "";
+
+                                    // Send remaining text after metadata
+                                    const remainingText = chunk.substring(newlineIndex + 1);
+                                    if (remainingText) {
+                                        textBuffer.current += remainingText;
+                                    }
+                                }
+                            } catch (e) {
+                                // Not JSON, treat as regular text
+                                textBuffer.current += chunk;
+                            }
+                        }
+                        isFirstChunk = false;
+                    } else {
+                        // Check for final ID marker
+                        const idMatch = chunk.match(/\n\[ID:(\d+)\]$/);
+                        if (idMatch) {
+                            summaryId = idMatch[1];
+                            const textBeforeId = chunk.substring(0, idMatch.index);
+                            if (textBeforeId) {
+                                textBuffer.current += textBeforeId;
+                            }
+                        } else {
+                            textBuffer.current += chunk;
+                        }
+                    }
+
+                    return readChunk();
+                });
+            }
+
+            return readChunk();
+        })
+        .catch(err => {
+            clearInterval(stageInterval);
+            clearInterval(typingInterval);
+            status.textContent = err.message;
+            status.className = "status error";
+            summarizeBtn.disabled = false;
+            defaultContent.textContent = "Summarize Now";
+            defaultContent.style.display = 'inline';
+            loadingContent.style.display = 'none';
+            loadingContent.classList.add('hidden');
         });
     };
 

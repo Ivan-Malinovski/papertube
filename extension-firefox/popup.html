@@ -236,6 +236,10 @@
             opacity: 0.7;
         }
 
+        button.btn-primary .hidden {
+            display: none;
+        }
+
         .hidden {
             display: none !important;
         }
@@ -247,6 +251,91 @@
             text-align: center;
             padding: 6px;
             border-radius: 6px;
+        }
+
+        .status-anim-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-height: 20px;
+        }
+
+        .spinner {
+            width: 14px;
+            height: 14px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .status-anim-text {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            transition: opacity 0.3s ease, transform 0.3s ease;
+            opacity: 0;
+            transform: translateY(5px);
+            position: absolute;
+            display: none;
+        }
+
+        .status-anim-text.active {
+            opacity: 1;
+            transform: translateY(0);
+            display: inline;
+        }
+
+        .status-anim-text.exit {
+            opacity: 0;
+            transform: translateY(-5px);
+        }
+
+        .streaming-status {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+
+        .streaming-status .dot {
+            width: 6px;
+            height: 6px;
+            background: var(--primary);
+            border-radius: 50%;
+            animation: pulse 1.2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 0.4; transform: scale(0.9); }
+            50% { opacity: 1; transform: scale(1.1); }
+        }
+
+        .summary-placeholder {
+            font-size: 0.85rem;
+            line-height: 1.6;
+            color: var(--text-main);
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .typing-line {
+            display: inline-block;
+            width: 8px;
+            height: 16px;
+            background: var(--primary);
+            margin-left: 2px;
+            animation: blink 0.7s step-end infinite;
+            vertical-align: text-bottom;
+        }
+
+        @keyframes blink {
+            50% { opacity: 0; }
         }
 
         .success {
@@ -331,7 +420,13 @@
                 </select>
             </div>
             <button id="summarize-now" class="btn-primary">
-                Summarize Now
+                <span id="btn-default-content">Summarize Now</span>
+                <span id="btn-loading-content" class="hidden" style="display: none;">
+                    <span class="spinner"></span>
+                    <div class="status-anim-container" id="status-container" style="min-width: 120px;">
+                        <span class="status-anim-text active" style="position: relative; display: inline;">Processing...</span>
+                    </div>
+                </span>
             </button>
             <div id="status" class="status"></div>
         </div>
