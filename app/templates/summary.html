@@ -1,0 +1,321 @@
+{% extends "base.html" %}
+
+{% block title %}Summary: {{ summary.video_title }} - Papertube{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="summary-result-layout">
+        {% if summary.thumbnail_url %}
+        <div class="summary-result-thumbnail {{ 'is-unread' if not summary.is_read else '' }}">
+            <a href="{{ summary.video_url }}" target="_blank" title="Watch on YouTube">
+                <img src="{{ summary.thumbnail_url }}" alt="Video Thumbnail">
+                {% if summary.duration and summary.duration != 'Unknown' %}
+                <span class="badge">{{ summary.duration }}</span>
+                {% endif %}
+            </a>
+        </div>
+        {% endif %}
+
+        <div style="flex: 1; min-width: 0;">
+            <div class="summary-header">
+                <div style="flex: 1; min-width: 0;">
+                    <h1 class="summary-title" style="margin-bottom: 0.5rem;">{{ summary.video_title }}</h1>
+                    <div class="summary-meta">
+                        <span title="Channel"><i data-lucide="user"></i> {{ summary.channel_name or "Unknown Channel"
+                            }}</span>
+                        <span><i data-lucide="youtube"></i> <a href="{{ summary.video_url }}" target="_blank"
+                                class="youtube-link">Watch</a></span>
+                        <span title="Date"><i data-lucide="calendar"></i> {{ summary.created_at[:10] if
+                            summary.created_at else 'Recent' }}</span>
+                        <div class="badge-group" style="display: flex; gap: 0.5rem;">
+                            <span class="badge" title="Preset" style="font-size: 0.7rem; padding: 2px 6px;"><i
+                                    data-lucide="type"></i> {{ summary.prompt_preset }}</span>
+                            {% if summary.model %}
+                            <span class="badge model-badge" style="font-size: 0.7rem; padding: 2px 6px;">
+                                <i data-lucide="cpu"></i> {{ summary.model.split('/')[-1] }}
+                            </span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="summary-actions">
+                    <button id="mark-unread-btn" class="btn-secondary btn-small"
+                        title="{{ 'Mark as Unread' if summary.is_read else 'Mark as Read' }}">
+                        <i data-lucide="{{ 'mail-open' if summary.is_read else 'mail' }}"></i>
+                    </button>
+                    <button id="copy-btn" class="btn-secondary btn-small" title="Copy Summary">
+                        <i data-lucide="copy"></i>
+                    </button>
+                    <button id="delete-btn" class="btn-danger btn-small" title="Delete Summary">
+                        <i data-lucide="trash-2"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Actions Section -->
+    <div class="resummarize-box">
+        <div class="resummarize-controls">
+            <span class="resummarize-label">Resummarize:</span>
+            <select id="resummarize-preset" class="btn-small">
+                {% for key in settings.prompt_presets.keys() %}
+                <option value="{{ key }}" {% if key==summary.prompt_preset %}selected{% endif %}>{{ key | replace('_', '
+                    ') | title }}</option>
+                {% endfor %}
+            </select>
+            <button id="resummarize-btn" class="btn btn-small">
+                <span class="spinner spinner-small hidden" id="resummarize-spinner"></span>
+                Go
+            </button>
+        </div>
+
+        <div id="resummarize-loading" class="alert alert-success hidden"
+            style="margin-top: 0.5rem; padding: 0.5rem 0.75rem; font-size: 0.85rem;">
+            Generating new summary...
+        </div>
+
+        <button id="toggle-chat-btn" class="btn-secondary btn-small">
+            <i data-lucide="message-circle"></i> Ask a Question
+        </button>
+    </div>
+
+    <div id="summary-content" class="summary-content prose"
+        style="border-top: 1px solid var(--border-color); padding-top: 1.5rem;">
+    </div>
+    <script id="summary-raw" type="application/json">{{ summary.summary | tojson }}</script>
+
+    <!-- Chat UI -->
+    <div id="chat-ui" class="chat-container">
+        <div class="chat-header">
+            <div class="flex items-center gap-2">
+                <i data-lucide="message-circle" class="chat-header-icon"></i>
+                <span style="font-weight: 600; font-size: 0.9rem;">Assistant</span>
+            </div>
+            <button id="close-chat-btn" class="btn-icon" title="Close Chat">
+                <i data-lucide="x"></i>
+            </button>
+        </div>
+        <div id="chat-messages" class="chat-messages">
+            <div class="message assistant">
+                Hello! I've read the transcript for <strong>{{ summary.video_title }}</strong>. Ask me anything about
+                its content!
+            </div>
+        </div>
+        <div class="chat-input-container">
+            <input type="text" id="chat-input" placeholder="Type your question..." autocomplete="off">
+            <button id="send-chat-btn" class="btn" title="Send Message">
+                <i data-lucide="send"></i>
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const contentDiv = document.getElementById('summary-content');
+
+        // Render markdown
+        if (typeof marked !== 'undefined') {
+            const rawData = JSON.parse(document.getElementById('summary-raw').textContent);
+            contentDiv.innerHTML = marked.parse(rawData);
+        }
+
+        // Auto-mark as read after 2 seconds if unread
+        {% if not summary.is_read %}
+        setTimeout(async () => {
+            try {
+                const response = await fetch('/api/summary/{{ summary.id }}/toggle-read', { method: 'POST' });
+                const data = await response.json();
+                if (response.ok && data.is_read) {
+                    // Visually bloom into color
+                    const thumb = document.querySelector('.summary-result-thumbnail');
+                    if (thumb) thumb.classList.remove('is-unread');
+
+                    // Update the toggle button icon to 'mail-open'
+                    const readBtn = document.getElementById('mark-unread-btn');
+                    readBtn.title = "Mark as Unread";
+                    readBtn.innerHTML = '<i data-lucide="mail-open"></i>';
+                    lucide.createIcons();
+                }
+            } catch (err) { console.error('Silent auto-read failed:', err); }
+        }, 2000);
+        {% endif %}
+
+        // Copy functionality
+        document.getElementById('copy-btn').addEventListener('click', () => {
+            const content = contentDiv.innerText;
+            navigator.clipboard.writeText(content).then(() => {
+                const btn = document.getElementById('copy-btn');
+                const originalIcon = btn.innerHTML;
+                btn.innerHTML = '<i data-lucide="check"></i>';
+                lucide.createIcons();
+                setTimeout(() => {
+                    btn.innerHTML = originalIcon;
+                    lucide.createIcons();
+                }, 2000);
+            });
+        });
+
+        // Mark unread toggle
+        document.getElementById('mark-unread-btn').addEventListener('click', async () => {
+            try {
+                const response = await fetch('/api/summary/{{ summary.id }}/toggle-read', { method: 'POST' });
+                if (response.ok) {
+                    location.reload();
+                }
+            } catch (err) { console.error(err); }
+        });
+
+        // Delete with inline confirmation
+        const deleteBtn = document.getElementById('delete-btn');
+        deleteBtn.addEventListener('click', async () => {
+            if (!deleteBtn.classList.contains('confirming')) {
+                deleteBtn.classList.add('confirming');
+                deleteBtn.dataset.originalHtml = deleteBtn.innerHTML;
+                deleteBtn.innerHTML = '<i data-lucide="alert-triangle"></i>';
+                lucide.createIcons();
+
+                setTimeout(() => {
+                    if (deleteBtn.classList.contains('confirming')) {
+                        deleteBtn.classList.remove('confirming');
+                        deleteBtn.innerHTML = deleteBtn.dataset.originalHtml;
+                        lucide.createIcons();
+                    }
+                }, 3000);
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/summary/{{ summary.id }}', { method: 'DELETE' });
+                if (response.ok) {
+                    window.location.href = '/history';
+                }
+            } catch (err) { console.error(err); }
+        });
+
+        // Resummarize
+        const resBtn = document.getElementById('resummarize-btn');
+        const resPreset = document.getElementById('resummarize-preset');
+        resBtn.addEventListener('click', async () => {
+            resBtn.disabled = true;
+            document.getElementById('resummarize-loading').classList.remove('hidden');
+            document.getElementById('resummarize-spinner').classList.remove('hidden');
+            const fd = new FormData();
+            fd.append('url', '{{ summary.video_url }}');
+            fd.append('preset', resPreset.value);
+            try {
+                const resp = await fetch('/summarize', { method: 'POST', body: fd, credentials: 'include' });
+                if (!resp.ok) {
+                    let errMsg = `Server error ${resp.status}`;
+                    try { const d = await resp.json(); errMsg = d.error || errMsg; } catch { }
+                    throw new Error(errMsg);
+                }
+                const data = await resp.json();
+                window.location.href = `/summary/${data.id}`;
+            } catch (err) {
+                alert('Resummarize failed: ' + err.message);
+                resBtn.disabled = false;
+                document.getElementById('resummarize-loading').classList.add('hidden');
+                document.getElementById('resummarize-spinner').classList.add('hidden');
+            }
+        });
+
+        // Chat
+        const chatUi = document.getElementById('chat-ui');
+        const chatInput = document.getElementById('chat-input');
+        const chatMessages = document.getElementById('chat-messages');
+
+        document.getElementById('toggle-chat-btn').addEventListener('click', () => {
+            chatUi.classList.add('active');
+            chatInput.focus();
+        });
+        document.getElementById('close-chat-btn').addEventListener('click', () => chatUi.classList.remove('active'));
+
+        async function sendMessage() {
+            const msg = chatInput.value.trim();
+            if (!msg) return;
+
+            // Disable input while responding
+            chatInput.disabled = true;
+            document.getElementById('send-chat-btn').disabled = true;
+
+            const userMsg = document.createElement('div');
+            userMsg.className = 'message user';
+            userMsg.textContent = msg;
+            chatMessages.appendChild(userMsg);
+            chatInput.value = '';
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+
+            const assistantMsg = document.createElement('div');
+            assistantMsg.className = 'message assistant';
+            assistantMsg.innerHTML = '<span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span>';
+            chatMessages.appendChild(assistantMsg);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+
+            try {
+                const resp = await fetch('/api/chat', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: `id={{ summary.id }}&message=${encodeURIComponent(msg)}`
+                });
+                if (!resp.ok) {
+                    let errMsg = `Server error ${resp.status}`;
+                    try { const d = await resp.json(); errMsg = d.error || errMsg; } catch { }
+                    throw new Error(errMsg);
+                }
+
+                // Drip-feed smooth streaming
+                const reader = resp.body.getReader();
+                const decoder = new TextDecoder();
+                let textBuffer = "";
+                let displayBuffer = "";
+                let streamDone = false;
+                let firstChunkReceived = false;
+
+                const drip = setInterval(() => {
+                    if (textBuffer.length > 0) {
+                        // Clear the dots indicator on the very first tick with content
+                        if (!firstChunkReceived) {
+                            firstChunkReceived = true;
+                            assistantMsg.innerHTML = '';
+                        }
+                        const take = textBuffer.length > 50 ? 5 : (textBuffer.length > 20 ? 3 : 1);
+                        displayBuffer += textBuffer.substring(0, take);
+                        textBuffer = textBuffer.substring(take);
+                        assistantMsg.innerHTML = (typeof marked !== 'undefined')
+                            ? marked.parse(displayBuffer)
+                            : displayBuffer;
+                        chatMessages.scrollTop = chatMessages.scrollHeight;
+                    } else if (streamDone) {
+                        clearInterval(drip);
+                        chatInput.disabled = false;
+                        document.getElementById('send-chat-btn').disabled = false;
+                        chatInput.focus();
+                    }
+                }, 20);
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) { streamDone = true; break; }
+                    textBuffer += decoder.decode(value, { stream: true });
+                }
+
+            } catch (err) {
+                assistantMsg.textContent = 'Error: ' + err.message;
+                assistantMsg.classList.add('error');
+                chatInput.disabled = false;
+                document.getElementById('send-chat-btn').disabled = false;
+            }
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        document.getElementById('send-chat-btn').addEventListener('click', sendMessage);
+        chatInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMessage(); });
+    });
+</script>
+{% endblock %}

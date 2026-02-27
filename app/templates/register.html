@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block title %}Setup - Papertube{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width: 450px; margin: 4rem auto; padding: 2.5rem;">
+    <div class="text-center" style="margin-bottom: 2rem;">
+        <h2 style="margin-bottom: 0.5rem; color: var(--primary-color);">Setup Your Instance</h2>
+        <p style="color: var(--muted-text); font-size: 0.9rem;">Create the first admin account to get started.</p>
+    </div>
+
+    <form method="POST" action="/register">
+        <div class="form-group" style="margin-bottom: 1.5rem;">
+            <label for="username">Admin Username</label>
+            <input type="text" id="username" name="username" placeholder="admin" required
+                style="width: 100%; padding: 0.75rem; border-radius: 12px;">
+        </div>
+
+        <div class="form-group" style="margin-bottom: 1.5rem;">
+            <label for="full_name">Full Name</label>
+            <input type="text" id="full_name" name="full_name" placeholder="John Doe"
+                style="width: 100%; padding: 0.75rem; border-radius: 12px;">
+        </div>
+
+        <div class="form-group" style="margin-bottom: 2rem;">
+            <label for="password">Set Admin Password</label>
+            <input type="password" id="password" name="password" placeholder="••••••••" required
+                style="width: 100%; padding: 0.75rem; border-radius: 12px;">
+            <p style="font-size: 0.75rem; color: var(--muted-text); margin-top: 0.5rem;">Please use a strong password.
+            </p>
+        </div>
+
+        <button type="submit" class="btn" style="width: 100%; padding: 0.75rem; font-weight: 700;">
+            Complete Setup & Login
+        </button>
+    </form>
+</div>
+{% endblock %}

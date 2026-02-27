@@ -1,0 +1,293 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - Papertube{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width: 600px; margin: 0 auto;">
+    <h2 style="margin-bottom: 2rem; display: flex; align-items: center; gap: 0.5rem;"><i data-lucide="settings"></i>
+        System Settings</h2>
+
+    {% if message %}
+    <div class="alert alert-success mt-4">{{ message }}</div>
+    {% endif %}
+
+    {% if error %}
+    <div class="alert alert-error mt-4">{{ error }}</div>
+    {% endif %}
+
+    <form method="POST" action="/settings" class="mt-4">
+        <div class="form-group">
+            <label for="api_endpoint">OpenAI compatible endpoint</label>
+            <input type="url" id="api_endpoint" name="api_endpoint" value="{{ settings.api_endpoint }}" required>
+        </div>
+
+        <div class="form-group">
+            <label for="api_token">API Token</label>
+            <input type="password" id="api_token" name="api_token" value="{{ settings.api_token }}" required>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.5rem;">
+                <small class="text-muted">Your OpenAI compatible token (e.g., sk-...)</small>
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <button type="button" id="test-api-btn" class="btn"
+                        style="padding: 0.3rem 0.75rem; font-size: 0.8rem; background: var(--border-color); color: var(--text-color);">Test
+                        API</button>
+                    <span id="api-test-status" style="font-size: 0.85rem; font-weight: 600;"></span>
+                </div>
+            </div>
+        </div>
+
+        <div class="form-group" style="position: relative;">
+            <label for="default_model">Default Model</label>
+            <div style="display: flex; gap: 0.5rem; width: 100%;">
+                <input type="text" id="default_model" name="default_model" value="{{ settings.default_model }}" required
+                    style="flex: 1; min-width: 0;">
+                <button type="button" id="fetch-models-btn" class="btn"
+                    style="padding: 0 1rem; background: var(--primary-color); white-space: nowrap;"><i
+                        data-lucide="download" style="width: 16px; height: 16px; color: white;"></i> Fetch</button>
+            </div>
+
+            <div id="model-dropdown" class="hidden"
+                style="position: absolute; top: calc(100% + 5px); left: 0; right: 0; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; z-index: 50; max-height: 250px; overflow-y: auto; display: flex; flex-direction: column; box-shadow: 0 4px 12px rgba(0,0,0,0.2);">
+                <div
+                    style="padding: 0.5rem; border-bottom: 1px solid var(--border-color); position: sticky; top: 0; background: inherit; z-index: 2;">
+                    <input type="text" id="model-search" placeholder="Search models (e.g. glm)..."
+                        style="width: 100%; padding: 0.4rem 0.8rem; font-size: 0.9rem; border-radius: 6px;">
+                </div>
+                <div id="model-list" style="padding: 0.25rem;"></div>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>Prompt Presets</label>
+            <div id="presets-container" style="display: flex; flex-direction: column; gap: 0.75rem;"></div>
+            <button type="button" id="add-preset-btn" class="btn mt-2"
+                style="background: var(--border-color); color: var(--text-color); font-size: 0.85rem; padding: 0.5rem 1rem;"><i
+                    data-lucide="plus" style="width: 16px; height: 16px; margin-right: 4px;"></i> Add New
+                Preset</button>
+            <input type="hidden" id="prompt_presets_json" name="prompt_presets_json">
+            <script id="initial-presets-data" type="application/json">
+                {{ settings.prompt_presets_json | safe }}
+            </script>
+        </div>
+
+        <div class="mt-8 flex justify-between items-center"
+            style="border-top: 1px solid var(--border-color); padding-top: 1.5rem;">
+            <a href="/bookmarklet" class="text-sm flex items-center gap-2"
+                style="color: var(--muted-text); text-decoration: none;">
+                <i data-lucide="bookmark" style="width: 16px; height: 16px;"></i>
+                Bookmarklet
+            </a>
+            <button type="submit" class="btn">Save Settings</button>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const testApiBtn = document.getElementById('test-api-btn');
+        const apiTestStatus = document.getElementById('api-test-status');
+        const endpointInput = document.getElementById('api_endpoint');
+        const tokenInput = document.getElementById('api_token');
+
+        const fetchModelsBtn = document.getElementById('fetch-models-btn');
+        const defaultModelInput = document.getElementById('default_model');
+        const modelDropdown = document.getElementById('model-dropdown');
+        const modelSearch = document.getElementById('model-search');
+        const modelList = document.getElementById('model-list');
+
+        let allModels = [];
+
+        testApiBtn.addEventListener('click', async () => {
+            const endpoint = endpointInput.value;
+            const token = tokenInput.value;
+            if (!endpoint || !token) {
+                apiTestStatus.textContent = "Required";
+                apiTestStatus.style.color = "var(--danger-color)";
+                return;
+            }
+
+            apiTestStatus.textContent = "Testing...";
+            apiTestStatus.style.color = "var(--text-color)";
+
+            try {
+                let base = endpoint;
+                if (base.endsWith('/chat/completions')) {
+                    base = base.replace('/chat/completions', '');
+                } else if (base.endsWith('/')) {
+                    base = base.slice(0, -1);
+                }
+
+                const res = await fetch(`${base}/models`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (res.ok) {
+                    apiTestStatus.textContent = "✅ OK";
+                    apiTestStatus.style.color = "#10b981";
+                } else {
+                    apiTestStatus.textContent = `❌ ${res.status}`;
+                    apiTestStatus.style.color = "#ef4444";
+                }
+            } catch (e) {
+                apiTestStatus.textContent = "❌ Failed";
+                apiTestStatus.style.color = "#ef4444";
+            }
+        });
+
+        const renderModels = (models) => {
+            modelList.innerHTML = '';
+            if (models.length === 0) {
+                modelList.innerHTML = '<div style="padding: 0.5rem; color: var(--muted-text); text-align: center;">No models found</div>';
+                return;
+            }
+
+            for (const model of models) {
+                const el = document.createElement('div');
+                el.textContent = model;
+                el.className = 'model-item';
+                el.style.padding = '0.5rem 0.75rem';
+                el.style.cursor = 'pointer';
+                el.style.borderRadius = '4px';
+                el.style.borderBottom = '1px solid rgba(0,0,0,0.05)';
+                el.style.fontSize = '0.9rem';
+
+                el.addEventListener('mouseover', () => el.style.background = 'var(--border-color)');
+                el.addEventListener('mouseout', () => el.style.background = 'transparent');
+
+                el.addEventListener('click', () => {
+                    defaultModelInput.value = model;
+                    modelDropdown.classList.add('hidden');
+                });
+                modelList.appendChild(el);
+            }
+        };
+
+        fetchModelsBtn.addEventListener('click', async () => {
+            // Toggle logic if already open
+            if (!modelDropdown.classList.contains('hidden')) {
+                modelDropdown.classList.add('hidden');
+                return;
+            }
+
+            const endpoint = endpointInput.value;
+            const token = tokenInput.value;
+            if (!endpoint || !token) {
+                alert("Please enter API Endpoint and Token first.");
+                return;
+            }
+
+            const originalContent = fetchModelsBtn.innerHTML;
+            fetchModelsBtn.innerHTML = '<span class="spinner" style="width: 14px; height: 14px; border-width: 2px;"></span>';
+            fetchModelsBtn.disabled = true;
+
+            try {
+                let base = endpoint;
+                if (base.endsWith('/chat/completions')) {
+                    base = base.replace('/chat/completions', '');
+                }
+                const res = await fetch(`${base}/models`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    allModels = data.data.map(m => m.id);
+                    renderModels(allModels);
+                    modelSearch.value = '';
+                    modelDropdown.classList.remove('hidden');
+                    modelSearch.focus();
+                } else {
+                    alert(`Failed to fetch models: ${res.status}`);
+                }
+            } catch (e) {
+                alert("Failed to connect entirely. " + e.message);
+            } finally {
+                fetchModelsBtn.innerHTML = originalContent;
+                fetchModelsBtn.disabled = false;
+                if (window.lucide) window.lucide.createIcons();
+            }
+        });
+
+        modelSearch.addEventListener('input', (e) => {
+            const term = e.target.value.toLowerCase();
+            const filtered = allModels.filter(m => m.toLowerCase().includes(term));
+            renderModels(filtered);
+        });
+
+        // Hide dropdown when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!modelDropdown.contains(e.target) && !fetchModelsBtn.contains(e.target)) {
+                modelDropdown.classList.add('hidden');
+            }
+        });
+
+        // Prompt Presets Dynamic UI Editor
+        const presetsContainer = document.getElementById('presets-container');
+        const addPresetBtn = document.getElementById('add-preset-btn');
+        const presetsJsonInput = document.getElementById('prompt_presets_json');
+        const settingsForm = document.querySelector('form[action="/settings"]');
+
+        let presets = {};
+        try {
+            const rawJson = document.getElementById('initial-presets-data').textContent.trim();
+            presets = JSON.parse(rawJson);
+        } catch (e) {
+            presets = { "detailed": "Summarize this in detail." };
+        }
+
+        const renderPresets = () => {
+            presetsContainer.innerHTML = '';
+            Object.entries(presets).forEach(([key, value]) => {
+                const row = document.createElement('div');
+                row.style.cssText = "display: flex; gap: 0.5rem; align-items: flex-start; background: rgba(0,0,0,0.02); border: 1px solid var(--border-color); padding: 0.75rem; border-radius: 8px;";
+
+                const keyInput = document.createElement('input');
+                keyInput.type = 'text';
+                keyInput.value = key;
+                keyInput.placeholder = "Preset Name";
+                keyInput.style.cssText = "flex: 1; padding: 0.5rem; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg); font-size: 0.85rem;";
+
+                const valInput = document.createElement('textarea');
+                valInput.value = value;
+                valInput.placeholder = "Prompt Instructions";
+                valInput.rows = 2;
+                valInput.style.cssText = "flex: 3; padding: 0.5rem; border-radius: 6px; border: 1px solid var(--border-color); background: var(--card-bg); font-size: 0.85rem; resize: vertical;";
+
+                const delBtn = document.createElement('button');
+                delBtn.type = 'button';
+                delBtn.innerHTML = '<i data-lucide="trash-2" style="width: 16px; height: 16px;"></i>';
+                delBtn.style.cssText = "background: rgba(239, 68, 68, 0.1); color: #ef4444; border: none; padding: 0.5rem; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center;";
+
+                delBtn.addEventListener('click', () => {
+                    row.remove();
+                });
+
+                row.appendChild(keyInput);
+                row.appendChild(valInput);
+                row.appendChild(delBtn);
+                presetsContainer.appendChild(row);
+            });
+            if (window.lucide) window.lucide.createIcons();
+        };
+
+        addPresetBtn.addEventListener('click', () => {
+            const tempKey = `Preset ${presetsContainer.children.length + 1}`;
+            presets[tempKey] = "";
+            renderPresets();
+        });
+
+        settingsForm.addEventListener('submit', (e) => {
+            const newPresets = {};
+            Array.from(presetsContainer.children).forEach(row => {
+                const key = row.children[0].value.trim();
+                const val = row.children[1].value.trim();
+                if (key) {
+                    newPresets[key] = val;
+                }
+            });
+            presetsJsonInput.value = JSON.stringify(newPresets, null, 2);
+        });
+
+        renderPresets();
+    });
+</script>
+{% endblock %}

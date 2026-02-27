@@ -1,0 +1,9 @@
+venv/
+__pycache__/
+*.db
+.vscode/
+.git/
+.dockerignore
+Dockerfile
+docker-compose.yml
+plan.md

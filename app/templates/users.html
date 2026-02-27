@@ -1,0 +1,293 @@
+{% extends "base.html" %}
+
+{% block title %}User Management - Papertube{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+        <h1 style="margin: 0; font-weight: 800;">User Management</h1>
+        <button onclick="document.getElementById('createUserModal').classList.remove('hidden')" class="btn">
+            <i data-lucide="user-plus"></i>
+            <span>Create User</span>
+        </button>
+    </div>
+
+    <!-- Alert Messages -->
+    {% if request.query_params.get('success') %}
+    <div class="card"
+        style="background-color: rgba(34, 197, 94, 0.1); border-color: var(--success); color: var(--success); padding: 1rem; margin-bottom: 1.5rem;">
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <i data-lucide="check-circle" style="width: 20px; height: 20px;"></i>
+            <span>{{ request.query_params.get('success') }}</span>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if request.query_params.get('error') %}
+    <div class="card"
+        style="background-color: rgba(239, 68, 68, 0.1); border-color: var(--error); color: var(--error); padding: 1rem; margin-bottom: 1.5rem;">
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <i data-lucide="alert-circle" style="width: 20px; height: 20px;"></i>
+            <span>{{ request.query_params.get('error') }}</span>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="card" style="padding: 0; overflow: hidden;">
+        <div style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse; text-align: left;">
+                <thead>
+                    <tr style="background-color: rgba(0,0,0,0.02); border-bottom: 1px solid var(--border-color);">
+                        <th
+                            style="padding: 1rem 1.5rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted-text);">
+                            Username</th>
+                        <th
+                            style="padding: 1rem 1.5rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted-text);">
+                            Full Name</th>
+                        <th
+                            style="padding: 1rem 1.5rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted-text); text-align: center;">
+                            Role</th>
+                        <th
+                            style="padding: 1rem 1.5rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted-text); text-align: center;">
+                            Summaries</th>
+                        <th
+                            style="padding: 1rem 1.5rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted-text); text-align: right;">
+                            Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for u in users %}
+                    <tr style="border-bottom: 1px solid var(--border-color); transition: background-color 0.2s;">
+                        <td style="padding: 1rem 1.5rem;">
+                            <div style="font-weight: 700;">{{ u.username }}</div>
+                            <div style="font-size: 0.75rem; color: var(--muted-text);">Joined {{ u.created_at[:10] }}
+                            </div>
+                        </td>
+                        <td style="padding: 1rem 1.5rem; color: var(--text-color);">
+                            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                <span>{{ u.full_name or "—" }}</span>
+                                <button
+                                    onclick="openEditModal({{ u.id }}, '{{ (u.full_name or '') | replace("'", "\\'") }}')"
+                                    class="btn-icon" style="padding: 2px; opacity: 0.5;" title="Edit Name">
+                                    <i data-lucide="edit-3" style="width: 14px; height: 14px;"></i>
+                                </button>
+                            </div>
+                        </td>
+                        <td style="padding: 1rem 1.5rem; text-align: center;">
+                            <form action="/admin/users/role/{{ u.id }}" method="POST">
+                                <input type="hidden" name="is_admin" value="{{ 'false' if u.is_admin else 'true' }}">
+                                <button type="submit" class="badge"
+                                    style="cursor: pointer; border: none; outline: none; {% if u.is_admin %}background: rgba(59, 130, 246, 0.15); color: var(--primary-color);{% endif %}"
+                                    title="Toggle Role">
+                                    {% if u.is_admin %}
+                                    <i data-lucide="shield-check"></i> Admin
+                                    {% else %}
+                                    <i data-lucide="user"></i> User
+                                    {% endif %}
+                                </button>
+                            </form>
+                        </td>
+                        <td style="padding: 1rem 1.5rem; text-align: center;">
+                            <span
+                                style="font-family: monospace; font-weight: 600; padding: 0.25rem 0.6rem; background: var(--bg-color); border-radius: 6px; border: 1px solid var(--border-color);">
+                                {{ u.summary_count }}
+                            </span>
+                        </td>
+                        <td style="padding: 1rem 1.5rem; text-align: right;">
+                            <div style="display: flex; justify-content: flex-end; gap: 0.75rem; align-items: center;">
+                                <button onclick="openPasswordModal({{ u.id }}, '{{ u.username }}')" class="btn-icon"
+                                    style="color: var(--primary-color);" title="Reset Password">
+                                    <i data-lucide="key-round"></i>
+                                </button>
+
+                                {% if u.id != user.id %}
+                                <form action="/admin/users/delete/{{ u.id }}" method="POST"
+                                    onsubmit="return confirm('Delete this user and all their summaries? This cannot be undone.')">
+                                    <button type="submit" class="btn-icon" style="color: var(--error);"
+                                        title="Delete User">
+                                        <i data-lucide="trash-2"></i>
+                                    </button>
+                                </form>
+                                {% else %}
+                                <span
+                                    style="font-size: 0.8rem; font-style: italic; color: var(--muted-text);">You</span>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Create User Modal -->
+<div id="createUserModal" class="hidden modal-overlay">
+    <div class="card modal-content">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+            <h2 style="margin: 0;">New User</h2>
+            <button onclick="document.getElementById('createUserModal').classList.add('hidden')" class="btn-icon">
+                <i data-lucide="x"></i>
+            </button>
+        </div>
+
+        <form action="/admin/users/create" method="POST">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" name="username" id="username" required placeholder="e.g. john_doe">
+            </div>
+
+            <div class="form-group">
+                <label for="password">Initial Password</label>
+                <input type="password" name="password" id="password" required placeholder="••••••••">
+            </div>
+
+            <div class="form-group">
+                <label for="full_name_create">Full Name (Optional)</label>
+                <input type="text" name="full_name" id="full_name_create" placeholder="e.g. John Doe">
+            </div>
+
+            <div class="form-group" style="display: flex; align-items: center; gap: 0.75rem; margin-top: 1.5rem;">
+                <input type="checkbox" name="is_admin" id="is_admin" value="true"
+                    style="width: 1.25rem; height: 1.25rem;">
+                <label for="is_admin" style="margin: 0; cursor: pointer;">Give Administrative Access</label>
+            </div>
+
+            <div class="modal-actions">
+                <button type="submit" class="btn" style="width: 100%;">
+                    <i data-lucide="user-plus"></i>
+                    <span>Create Account</span>
+                </button>
+                <button type="button" onclick="document.getElementById('createUserModal').classList.add('hidden')"
+                    class="btn-secondary" style="width: 100%;">
+                    Cancel
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Edit Profile Modal -->
+<div id="editProfileModal" class="hidden modal-overlay">
+    <div class="card modal-content">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+            <h2 style="margin: 0;">Edit User</h2>
+            <button onclick="document.getElementById('editProfileModal').classList.add('hidden')" class="btn-icon">
+                <i data-lucide="x"></i>
+            </button>
+        </div>
+
+        <form id="editProfileForm" method="POST">
+            <div class="form-group">
+                <label for="edit_full_name">Full Name</label>
+                <input type="text" name="full_name" id="edit_full_name" placeholder="Full name">
+            </div>
+
+            <div class="modal-actions">
+                <button type="submit" class="btn" style="width: 100%;">
+                    <span>Save Changes</span>
+                </button>
+                <button type="button" onclick="document.getElementById('editProfileModal').classList.add('hidden')"
+                    class="btn-secondary" style="width: 100%;">
+                    Cancel
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Reset Password Modal -->
+<div id="passwordModal" class="hidden modal-overlay">
+    <div class="card modal-content">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+            <h2 style="margin: 0;">Reset Password</h2>
+            <button onclick="document.getElementById('passwordModal').classList.add('hidden')" class="btn-icon">
+                <i data-lucide="x"></i>
+            </button>
+        </div>
+
+        <p style="font-size: 0.9rem; color: var(--muted-text); margin-bottom: 1.5rem;">
+            Setting new password for: <strong id="pw_username" style="color: var(--text-color);"></strong>
+        </p>
+
+        <form id="passwordForm" method="POST">
+            <div class="form-group">
+                <label for="new_password">New Password</label>
+                <input type="password" name="password" id="new_password" required placeholder="••••••••">
+            </div>
+
+            <div class="modal-actions">
+                <button type="submit" class="btn" style="width: 100%;">
+                    <i data-lucide="key-round"></i>
+                    <span>Set New Password</span>
+                </button>
+                <button type="button" onclick="document.getElementById('passwordModal').classList.add('hidden')"
+                    class="btn-secondary" style="width: 100%;">
+                    Cancel
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<style>
+    .modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.6);
+        backdrop-filter: blur(4px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        padding: 1.5rem;
+    }
+
+    .modal-content {
+        width: 100%;
+        max-width: 400px;
+        margin: 0;
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2);
+    }
+
+    .modal-actions {
+        margin-top: 2rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+
+    tr:hover {
+        background-color: rgba(0, 0, 0, 0.02);
+    }
+
+    [data-theme="dark"] tr:hover {
+        background-color: rgba(255, 255, 255, 0.02);
+    }
+
+    .badge i {
+        width: 14px;
+        height: 14px;
+        stroke-width: 2.5px;
+    }
+</style>
+
+<script>
+    function openEditModal(userId, fullName) {
+        const form = document.getElementById('editProfileForm');
+        const input = document.getElementById('edit_full_name');
+        form.action = `/admin/users/update/${userId}`;
+        input.value = fullName;
+        document.getElementById('editProfileModal').classList.remove('hidden');
+    }
+
+    function openPasswordModal(userId, username) {
+        const form = document.getElementById('passwordForm');
+        const usernameDisplay = document.getElementById('pw_username');
+        form.action = `/admin/users/password/${userId}`;
+        usernameDisplay.textContent = username;
+        document.getElementById('passwordModal').classList.remove('hidden');
+    }
+</script>
+{% endblock %}

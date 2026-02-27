@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  papertube:
+    build: .
+    container_name: papertube
+    ports:
+      - "8080:8000"
+    volumes:
+      - ./data:/app/data
+    restart: always
+    environment:
+      - PYTHONUNBUFFERED=1

@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Papertube{% endblock %}</title>
+    <!-- Modern Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Marked for Markdown Parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="/static/style.css">
+
+    <script>
+        // Apply theme early to prevent flash
+        (function () {
+            const storedTheme = localStorage.getItem('theme');
+            if (storedTheme === 'dark' || (!storedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            } else {
+                document.documentElement.removeAttribute('data-theme');
+            }
+        })();
+    </script>
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <a href="/" class="header-title">
+                <i data-lucide="youtube"></i>
+                <span>Papertube</span>
+            </a>
+            {% if user %}
+            <nav style="display: flex; align-items: center; gap: 1.5rem;">
+                <a href="/" class="{% if request.url.path == '/' %}active{% endif %}">Home</a>
+                <a href="/history" class="{% if request.url.path == '/history' %}active{% endif %}">History</a>
+                {% if user.is_admin %}
+                <a href="/admin/users" class="{% if request.url.path == '/admin/users' %}active{% endif %}">Users</a>
+                <a href="/settings" class="{% if request.url.path == '/settings' %}active{% endif %}" title="Settings">
+                    <i data-lucide="settings" style="width: 20px; height: 20px;"></i>
+                </a>
+                {% endif %}
+                <div style="border-left: 1px solid var(--border-color); height: 20px; margin: 0 0.5rem;"></div>
+                <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; font-weight: 600;">
+                    <i data-lucide="user" style="width: 18px; height: 18px; color: var(--primary-color);"></i>
+                    <span style="color: var(--text-color);">{{ user.username }}</span>
+                </div>
+                <button id="theme-toggle" title="Toggle Dark Mode"
+                    style="background:none; border:none; cursor: pointer; color: var(--text-color); display: flex; align-items: center; padding: 0.2rem;">
+                    <i data-lucide="moon" id="theme-icon" style="width: 20px; height: 20px;"></i>
+                </button>
+                <a href="/logout" title="Logout"
+                    style="color: var(--danger-color); display: flex; align-items: center;">
+                    <i data-lucide="log-out" style="width: 20px; height: 20px;"></i>
+                </a>
+            </nav>
+            {% endif %}
+        </header>
+
+        <main>
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
+    <script>
+        // Initialize Lucide icons
+        lucide.createIcons();
+
+        // Setup markdown rendering globally
+        document.addEventListener('DOMContentLoaded', () => {
+            const mdElements = document.querySelectorAll('.markdown-content');
+            mdElements.forEach(el => {
+                const rawText = el.innerHTML.trim();
+                // Replace escaped characters that might break markdown
+                const unescapedText = rawText
+                    .replace(/&gt;/g, '>')
+                    .replace(/&lt;/g, '<')
+                    .replace(/&amp;/g, '&');
+                el.innerHTML = marked.parse(unescapedText);
+            });
+
+            // Theme Toggle Logic
+            const themeToggle = document.getElementById('theme-toggle');
+            const themeIcon = document.getElementById('theme-icon');
+
+            const updateIcon = () => {
+                if (!themeIcon) return;
+                if (document.documentElement.hasAttribute('data-theme')) {
+                    themeIcon.setAttribute('data-lucide', 'sun');
+                } else {
+                    themeIcon.setAttribute('data-lucide', 'moon');
+                }
+                if (window.lucide) window.lucide.createIcons();
+            };
+
+            if (themeToggle) {
+                themeToggle.addEventListener('click', () => {
+                    if (document.documentElement.hasAttribute('data-theme')) {
+                        document.documentElement.removeAttribute('data-theme');
+                        localStorage.setItem('theme', 'light');
+                    } else {
+                        document.documentElement.setAttribute('data-theme', 'dark');
+                        localStorage.setItem('theme', 'dark');
+                    }
+                    updateIcon();
+                });
+                updateIcon();
+            }
+        });
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+
+</html>

@@ -1,0 +1,478 @@
+{% extends "base.html" %}
+
+{% block title %}Papertube - Home{% endblock %}
+
+{% block content %}
+<div class="card"
+    style="padding: 1rem 1.25rem; border-radius: 16px; margin-bottom: 2rem; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);">
+    <form id="summarize-form" style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+
+        <div class="form-group search-transition" id="url-container"
+            style="flex: 3; margin-bottom: 0; min-width: 250px; position: relative;">
+            <i data-lucide="youtube"
+                style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #ef4444; width: 22px; height: 22px; pointer-events: none;"></i>
+            <input type="url" id="url" name="url" placeholder="Paste any YouTube video URL..." required
+                style="padding: 0.75rem 1rem 0.75rem 2.75rem; margin: 0; border-radius: 12px; font-size: 0.95rem; border: 1px solid var(--border-color); background: var(--bg-color);">
+            {% if request.query_params.get("url") %}
+            <script>
+                document.getElementById('url').value = "{{ request.query_params.get('url') }}";
+            </script>
+            {% endif %}
+        </div>
+
+        <div class="form-group" style="flex: 1; margin-bottom: 0; min-width: 150px;">
+            <select id="preset" name="preset"
+                style="margin: 0; border-radius: 12px; font-size: 0.9rem; font-weight: 500; cursor: pointer;">
+                {% for key, description in presets.items() %}
+                <option value="{{ key }}">{{ key | replace('_', ' ') | title }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div id="btn-container" class="flex gap-2 search-transition"
+            style="margin-bottom: 0; min-width: 200px; flex: 1;">
+            <button type="submit" id="summarize-btn" class="btn"
+                style="padding: 0.75rem 1.5rem; border-radius: 12px; flex: 1; height: 100%; white-space: nowrap;">
+                <div id="btn-default-content" class="flex items-center justify-center gap-2">
+                    <span class="btn-text" style="font-weight: 600;">Summarize</span>
+                    <i data-lucide="zap" class="btn-icon" style="width: 18px; height: 18px;"></i>
+                </div>
+                <div id="btn-loading-content" class="hidden flex items-center justify-center gap-2 w-full">
+                    <span class="spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
+                    <div class="status-anim-container search-transition" id="status-container"
+                        style="width: 135px; min-width: 135px;">
+                        <span class="status-anim-text active" style="font-size: 0.85rem;">Processing...</span>
+                    </div>
+                </div>
+            </button>
+            <button type="button" id="cancel-btn" class="btn btn-danger hidden"
+                style="padding: 0 1rem; border-radius: 12px;">
+                <i data-lucide="x" style="width: 18px; height: 18px;"></i>
+            </button>
+        </div>
+    </form>
+
+    <div id="error-alert" class="alert alert-error hidden mt-3"
+        style="border-radius: 8px; padding: 0.75rem 1rem; font-size: 0.9rem;"></div>
+
+    <!-- Live Preview Area -->
+    <div id="live-preview" class="live-preview hidden">
+        <div class="live-preview-thumbnail-container">
+            <img id="live-thumb" src="" alt="Thumbnail">
+            <span id="live-duration" class="badge" style="display: none;"></span>
+        </div>
+        <div class="live-preview-info">
+            <div id="live-title" class="live-preview-title"></div>
+            <div id="live-channel" class="live-preview-channel"></div>
+        </div>
+    </div>
+</div>
+
+<div id="result-card" class="card hidden">
+    <div class="summary-result-layout">
+        <div id="result-thumbnail-container" class="summary-result-thumbnail" style="display: none;">
+            <img id="result-thumbnail" src="" alt="Thumbnail">
+            <span id="result-duration" class="badge" style="display: none;"></span>
+        </div>
+
+        <div style="flex: 1; min-width: 0;">
+            <div class="summary-header">
+                <div style="flex: 1; min-width: 0;">
+                    <h2 id="result-title" class="summary-title" style="margin-bottom: 0.5rem;">Summary Result</h2>
+                    <div id="result-meta" class="summary-meta">
+                        <!-- Placeholder for metadata -->
+                    </div>
+                </div>
+                <div class="summary-actions">
+                    <button id="copy-btn" class="btn-secondary btn-small">
+                        <i data-lucide="copy"></i> Copy
+                    </button>
+                    <a id="view-full-btn" href="#" class="btn-secondary btn-small">
+                        <i data-lucide="external-link"></i> View
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="summary-content" class="summary-content prose markdown-content"
+        style="border-top: 1px solid var(--border-color); padding-top: 1.5rem;"></div>
+</div>
+
+{% if recent_summaries %}
+<div class="mt-8">
+    <div class="flex justify-between items-center"
+        style="margin-bottom: 0.75rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem; width: 100%;">
+        <h3 style="font-weight: 700; margin: 0;">Recent Summaries</h3>
+        <a href="/history"
+            style="font-weight: 600; color: var(--primary-color); text-decoration: none; font-size: 0.9rem; margin-left: auto;">View
+            All &rarr;</a>
+    </div>
+
+    <div class="history-list">
+        {% for summary in recent_summaries %}
+        <a href="/summary/{{ summary.id }}" class="card history-item">
+            <div class="history-thumbnail {{ 'is-unread' if not summary.is_read else '' }}">
+                <img src="{{ summary.thumbnail_url or '/static/img/placeholder.jpg' }}" alt="Thumbnail">
+                {% if summary.duration and summary.duration != 'Unknown' %}
+                <span class="badge">{{ summary.duration }}</span>
+                {% endif %}
+            </div>
+
+            <div class="history-content">
+                <div class="history-title">
+                    <span class="title-text">{{ summary.video_title }}</span>
+                </div>
+
+                <div class="history-meta">
+                    <span style="color: var(--primary-color); font-weight: 600;">{{ summary.channel_name or "Unknown
+                        Channel" }}</span>
+                    <span><i data-lucide="calendar"></i> {{ summary.created_at[:10] if summary.created_at else 'Recent'
+                        }}</span>
+                    <span><i data-lucide="type"></i> {{ summary.prompt_preset }}</span>
+                </div>
+            </div>
+
+            <div class="history-excerpt markdown-content">
+                {{ (summary.summary[:300]) if summary.summary else 'No summary available.' }}
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const form = document.getElementById('summarize-form');
+        const btn = document.getElementById('summarize-btn');
+        const cancelBtn = document.getElementById('cancel-btn');
+        const errorAlert = document.getElementById('error-alert');
+        const resultCard = document.getElementById('result-card');
+        const resultTitle = document.getElementById('result-title');
+        const resultMeta = document.getElementById('result-meta');
+        const summaryContent = document.getElementById('summary-content');
+        const viewFullBtn = document.getElementById('view-full-btn');
+        const copyBtn = document.getElementById('copy-btn');
+
+        const urlInput = document.getElementById('url');
+        const livePreview = document.getElementById('live-preview');
+        const liveThumb = document.getElementById('live-thumb');
+        const liveDuration = document.getElementById('live-duration');
+        const liveTitle = document.getElementById('live-title');
+        const liveChannel = document.getElementById('live-channel');
+
+        let currentSummaryText = "";
+        let abortController = null;
+        let metadataAbortController = null;
+        let typingInterval = null;
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            // UI state
+            const defaultContent = document.getElementById('btn-default-content');
+            const loadingContent = document.getElementById('btn-loading-content');
+            const statusContainer = document.getElementById('status-container');
+
+            btn.classList.add('loading');
+            btn.disabled = true;
+            document.getElementById('summarize-form').classList.add('form-loading');
+            defaultContent.classList.add('hidden');
+            loadingContent.classList.remove('hidden');
+
+            cancelBtn.classList.remove('hidden');
+            errorAlert.classList.add('hidden');
+            resultCard.classList.add('hidden');
+
+            // Progress Steps Logic
+            const modelName = "{{ settings.default_model.split('/')[-1] if settings.default_model else 'AI' }}";
+            const steps = [
+                "Loading video metadata...",
+                "Extracting transcription...",
+                `Sending to ${modelName}...`,
+                "Awaiting summary..."
+            ];
+
+            let currentStep = 0;
+            const updateStatus = () => {
+                const currentEl = statusContainer.querySelector('.status-anim-text.active');
+                if (currentStep < steps.length) {
+                    if (currentEl) {
+                        currentEl.classList.remove('active');
+                        currentEl.classList.add('exit');
+                        setTimeout(() => currentEl.remove(), 400);
+                    }
+
+                    // Small delay to ensure the browser registers the 'off-screen' state first
+                    setTimeout(() => {
+                        const nextEl = document.createElement('span');
+                        nextEl.className = 'status-anim-text active';
+                        nextEl.textContent = steps[currentStep];
+                        statusContainer.appendChild(nextEl);
+                        currentStep++;
+                    }, 50);
+                }
+            };
+
+            // Start first step immediately
+            statusContainer.innerHTML = '';
+            updateStatus();
+
+            // Interval to advance steps if the request is taking longer
+            const statusInterval = setInterval(() => {
+                if (currentStep < steps.length) {
+                    updateStatus();
+                } else {
+                    clearInterval(statusInterval);
+                }
+            }, 2500); // Transition every 2.5 seconds
+
+            const formData = new FormData(form);
+            abortController = new AbortController();
+
+            try {
+                const response = await fetch('/summarize/stream', {
+                    method: 'POST',
+                    body: formData,
+                    signal: abortController.signal
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Something went wrong');
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let isFirstChunk = true;
+                let summaryId = null;
+
+                // Smoothing logic variables
+                let textBuffer = "";
+                let displayBuffer = "";
+                let isStreamingDone = false;
+                currentSummaryText = ""; // Full text for final save/display
+
+                // Transition UI to the result card early
+                resultCard.classList.remove('hidden');
+                summaryContent.innerHTML = '<div class="streaming-status"><div class="dot"></div> Generating summary...</div><div class="summary-placeholder"></div><span class="typing-line"></span>';
+                const summaryPlaceholder = resultCard.querySelector('.summary-placeholder');
+                const typingLine = resultCard.querySelector('.typing-line');
+
+                // Smooth typing loop
+                const updateDisplay = () => {
+                    if (textBuffer.length > 0) {
+                        // Take 1-3 characters based on how backed up we are to keep pace
+                        const charsToTake = textBuffer.length > 50 ? 5 : (textBuffer.length > 20 ? 3 : 1);
+                        const chunk = textBuffer.substring(0, charsToTake);
+                        textBuffer = textBuffer.substring(charsToTake);
+                        displayBuffer += chunk;
+
+                        if (typeof marked !== 'undefined') {
+                            summaryPlaceholder.innerHTML = marked.parse(displayBuffer);
+                        } else {
+                            summaryPlaceholder.textContent = displayBuffer;
+                        }
+
+                        if (displayBuffer.length > 5 && resultCard.getBoundingClientRect().top > window.innerHeight) {
+                            resultCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }
+                    } else if (isStreamingDone) {
+                        clearInterval(typingInterval);
+                        onStreamingComplete();
+                    }
+                };
+
+                typingInterval = setInterval(updateDisplay, 25); // ~40 chars per second
+
+                const onStreamingComplete = () => {
+                    if (summaryId) viewFullBtn.href = `/summary/${summaryId}`;
+                    if (typingLine) typingLine.remove();
+                    const streamHeader = resultCard.querySelector('.streaming-status');
+                    if (streamHeader) streamHeader.innerHTML = '<i data-lucide="check-circle" style="width: 16px; height: 16px; color: #10b981;"></i> Summary Complete';
+                    if (window.lucide) lucide.createIcons({ targets: '.streaming-status' });
+                };
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) {
+                        isStreamingDone = true;
+                        break;
+                    }
+
+                    const chunk = decoder.decode(value, { stream: true });
+
+                    if (isFirstChunk) {
+                        const firstNewlineIndex = chunk.indexOf('\n');
+                        if (firstNewlineIndex !== -1) {
+                            const metadataRaw = chunk.substring(0, firstNewlineIndex);
+                            const remainingText = chunk.substring(firstNewlineIndex + 1);
+
+                            try {
+                                const metadata = JSON.parse(metadataRaw);
+                                resultTitle.textContent = metadata.video_title || 'Summarized Video';
+                                resultMeta.innerHTML = `
+                                    <span class="flex items-center gap-2"><i data-lucide="user"></i> ${metadata.channel_name || 'Unknown Channel'}</span>
+                                    <span class="flex items-center gap-2"><i data-lucide="clock"></i> ${metadata.duration || 'Unknown'}</span>
+                                    <span class="flex items-center gap-2"><i data-lucide="calendar"></i> Just Now</span>
+                                `;
+                                lucide.createIcons({ targets: '#result-meta' });
+
+                                if (metadata.thumbnail_url) {
+                                    const resultThumbnail = document.getElementById('result-thumbnail');
+                                    const resultThumbnailContainer = document.getElementById('result-thumbnail-container');
+                                    const resultDuration = document.getElementById('result-duration');
+                                    resultThumbnail.src = metadata.thumbnail_url;
+                                    resultThumbnailContainer.style.display = 'block';
+                                    if (metadata.duration && metadata.duration !== 'Unknown') {
+                                        resultDuration.textContent = metadata.duration;
+                                        resultDuration.style.display = 'block';
+                                    }
+                                }
+
+                                if (statusInterval) clearInterval(statusInterval);
+                                statusContainer.innerHTML = '<span class="status-anim-text active">Summarizing results...</span>';
+
+                            } catch (e) {
+                                console.error("Metadata parse error", e);
+                            }
+
+                            textBuffer += remainingText;
+                            currentSummaryText += remainingText;
+                            isFirstChunk = false;
+                        } else {
+                            continue;
+                        }
+                    } else {
+                        const idMatch = chunk.match(/\n\[ID:(\d+)\]$/);
+                        if (idMatch) {
+                            summaryId = idMatch[1];
+                            const contentOnly = chunk.replace(/\n\[ID:\d+\]$/, '');
+                            textBuffer += contentOnly;
+                            currentSummaryText += contentOnly;
+                        } else {
+                            textBuffer += chunk;
+                            currentSummaryText += chunk;
+                        }
+                    }
+                }
+
+                window.history.replaceState({}, document.title, "/");
+
+            } catch (err) {
+                if (err.name === 'AbortError') {
+                    console.log('Fetch aborted');
+                } else {
+                    errorAlert.textContent = err.message;
+                    errorAlert.classList.remove('hidden');
+                }
+            } finally {
+                if (statusInterval) clearInterval(statusInterval);
+                btn.classList.remove('loading');
+                btn.disabled = false;
+                document.getElementById('summarize-form').classList.remove('form-loading');
+                defaultContent.classList.remove('hidden');
+                loadingContent.classList.add('hidden');
+                cancelBtn.classList.add('hidden');
+                abortController = null;
+            }
+        });
+
+        // Live Metadata Preview Logic
+        urlInput.addEventListener('input', async () => {
+            const url = urlInput.value.trim();
+
+            // Hide preview if input is empty or too short
+            if (!url || url.length < 10) {
+                livePreview.classList.add('hidden');
+                return;
+            }
+
+            // Simple YT URL check
+            if (!url.includes('youtube.com/') && !url.includes('youtu.be/')) {
+                return;
+            }
+
+            // Cancel any pending metadata request
+            if (metadataAbortController) metadataAbortController.abort();
+            metadataAbortController = new AbortController();
+
+            try {
+                const resp = await fetch(`/api/metadata?url=${encodeURIComponent(url)}`, {
+                    signal: metadataAbortController.signal
+                });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    liveThumb.src = data.thumbnail || '';
+                    liveTitle.textContent = data.title || '';
+                    liveChannel.textContent = data.channel || '';
+
+                    if (data.duration && data.duration !== 'Unknown') {
+                        liveDuration.textContent = data.duration;
+                        liveDuration.style.display = 'block';
+                    } else {
+                        liveDuration.style.display = 'none';
+                    }
+
+                    livePreview.classList.remove('hidden');
+                } else {
+                    livePreview.classList.add('hidden');
+                }
+            } catch (e) {
+                if (e.name !== 'AbortError') livePreview.classList.add('hidden');
+            }
+        });
+
+        cancelBtn.addEventListener('click', () => {
+            if (abortController) {
+                abortController.abort();
+            }
+            // Force immediate UI reset
+            btn.classList.remove('loading');
+            btn.disabled = false;
+            document.getElementById('summarize-form').classList.remove('form-loading');
+            document.getElementById('btn-default-content').classList.remove('hidden');
+            document.getElementById('btn-loading-content').classList.add('hidden');
+            cancelBtn.classList.add('hidden');
+            if (typingInterval) clearInterval(typingInterval);
+            abortController = null;
+        });
+
+        copyBtn.addEventListener('click', () => {
+            if (!currentSummaryText) return;
+            navigator.clipboard.writeText(currentSummaryText).then(() => {
+                const originalText = copyBtn.innerHTML;
+                copyBtn.innerHTML = '<i data-lucide="check"></i> Copied';
+                lucide.createIcons();
+                setTimeout(() => {
+                    copyBtn.innerHTML = originalText;
+                    lucide.createIcons();
+                }, 2000);
+            });
+        });
+
+        // Check for URL parameters (bookmarklet/extension support)
+        const urlParams = new URLSearchParams(window.location.search);
+        const autoUrl = urlParams.get('url');
+        const autoRun = urlParams.get('auto');
+
+        if (autoUrl) {
+            if (urlInput) {
+                urlInput.value = autoUrl;
+                // Trigger input event to show preview
+                urlInput.dispatchEvent(new Event('input'));
+
+                if (autoRun === '1') {
+                    // Small delay to ensure all event listeners are ready
+                    setTimeout(() => {
+                        form.requestSubmit();
+                    }, 100);
+                }
+            }
+        }
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+
+{% block title %}History - Papertube{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="flex justify-between items-center" style="margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem;">
+        <h2 style="display: flex; align-items: center; gap: 0.5rem;"><i data-lucide="history"></i> Request History</h2>
+
+        <div
+            style="display: flex; align-items: center; gap: 1rem; flex: 1; justify-content: flex-end; flex-wrap: wrap;">
+            <a href="/history?q={{ q }}&unread={{ 'false' if unread else 'true' }}"
+                class="btn-secondary flex items-center gap-2"
+                style="padding: 0.5rem 1rem; text-decoration: none; border-radius: 8px; height: 38px; box-sizing: border-box; {% if unread %}background-color: var(--primary-color); border-color: var(--primary-color); color: white;{% endif %}">
+                <i data-lucide="{{ 'mail-open' if unread else 'mail' }}" style="width: 18px; height: 18px;"></i>
+                <span style="font-size: 0.9rem; font-weight: 600;">Unread</span>
+            </a>
+
+            <form method="GET" action="/history" style="display: flex; gap: 0.5rem; max-width: 300px; flex: 1;">
+                {% if unread %}<input type="hidden" name="unread" value="true">{% endif %}
+                <input type="text" name="q" placeholder="Search..." value="{{ q }}"
+                    style="padding: 0.5rem; flex: 1; border-radius: 8px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color); height: 38px; box-sizing: border-box;">
+                <button type="submit" class="btn-secondary"
+                    style="padding: 0.5rem 1rem; border-radius: 8px; height: 38px; box-sizing: border-box;">
+                    <i data-lucide="search" style="width: 18px; height: 18px;"></i>
+                </button>
+                {% if q %}
+                <a href="/history{% if unread %}?unread=true{% endif %}" class="btn-secondary flex items-center gap-2"
+                    style="padding: 0.5rem 1rem;">Clear</a>
+                {% endif %}
+            </form>
+        </div>
+    </div>
+
+    {% if summaries %}
+    <div class="history-list">
+        {% for summary in summaries %}
+        <div class="history-container" style="position: relative;">
+            <a href="/summary/{{ summary.id }}" class="card history-item">
+                <div class="history-thumbnail {{ 'is-unread' if not summary.is_read else '' }}">
+                    <img src="{{ summary.thumbnail_url or '/static/img/placeholder.jpg' }}" alt="Thumbnail">
+                    {% if summary.duration and summary.duration != 'Unknown' %}
+                    <span class="badge">{{ summary.duration }}</span>
+                    {% endif %}
+                </div>
+
+                <div class="history-content">
+                    <div class="history-title">
+                        <span class="title-text">{{ summary.video_title }}</span>
+                    </div>
+
+                    <div class="history-meta">
+                        <span style="color: var(--primary-color); font-weight: 600;">{{ summary.channel_name or "Unknown
+                            Channel" }}</span>
+                        <span><i data-lucide="calendar"></i> {{ summary.created_at[:10] if summary.created_at else
+                            'Recent' }}</span>
+                        <span><i data-lucide="type"></i> {{ summary.prompt_preset }}</span>
+                    </div>
+                </div>
+
+                <div class="history-excerpt markdown-content">
+                    {{ (summary.summary[:300]) if summary.summary else 'No summary available.' }}
+                </div>
+            </a>
+            <button onclick="handleDelete(event, this, {{ summary.id }})"
+                class="btn-danger btn-small history-delete-btn" title="Delete Summary">
+                <i data-lucide="trash-2"></i>
+            </button>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="text-center" style="padding: 4rem 1rem; color: var(--muted-text);">
+        <i data-lucide="inbox" style="width: 48px; height: 48px; margin-bottom: 1rem; opacity: 0.5;"></i>
+        <p>No summaries found.</p>
+        <a href="/" class="btn mt-4">Create your first summary</a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    async function handleDelete(event, btn, id) {
+        event.preventDefault();
+        event.stopPropagation();
+
+        if (!btn.classList.contains('confirming')) {
+            btn.classList.add('confirming');
+            btn.innerHTML = '<i data-lucide="alert-triangle" style="width: 16px; height: 16px;"></i>';
+            lucide.createIcons();
+
+            setTimeout(() => {
+                btn.classList.remove('confirming');
+                btn.innerHTML = '<i data-lucide="trash-2" style="width: 16px; height: 16px;"></i>';
+                lucide.createIcons();
+            }, 3000);
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/summary/${id}`, { method: 'DELETE' });
+            if (response.ok) {
+                const container = btn.closest('.history-container');
+                container.style.opacity = '0';
+                container.style.transform = 'translateX(20px)';
+                setTimeout(() => container.remove(), 300);
+            }
+        } catch (err) {
+            console.error('Delete failed:', err);
+        }
+    }
+</script>
+{% endblock %}
