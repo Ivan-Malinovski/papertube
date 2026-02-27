@@ -1,8 +1,10 @@
 import httpx
 from typing import List, Dict, Any, Optional
 
-DEFAULT_API_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/openai/"
-DEFAULT_MODEL = "gemini-2.0-flash"
+from .config import get_default_api_endpoint, get_default_model
+
+DEFAULT_API_ENDPOINT = get_default_api_endpoint()
+DEFAULT_MODEL = get_default_model()
 
 
 async def summarize_transcript(

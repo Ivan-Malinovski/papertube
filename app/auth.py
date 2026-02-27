@@ -8,11 +8,11 @@ from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer
 from .database import get_user_by_username
+from .config import get_secret_key, get_algorithm, get_access_token_expire_minutes
 
-# Security configuration
-SECRET_KEY = os.getenv("SECRET_KEY") or secrets.token_hex(32)
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 365  # 1 year (stay logged in until manual logout)
+SECRET_KEY = get_secret_key()
+ALGORITHM = get_algorithm()
+ACCESS_TOKEN_EXPIRE_MINUTES = get_access_token_expire_minutes()
 
 # Use PBKDF2 with HMAC-SHA256 for maximum reliability and security.
 # This algorithm is built-in and does NOT have the 72-character limit that caused errors.
