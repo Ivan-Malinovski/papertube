@@ -54,7 +54,7 @@ async def summarize_transcript(
     try:
         async with httpx.AsyncClient(timeout=120.0) as client:
             response = await client.post(
-                f"{api_endpoint}/chat/completions",
+                f"{api_endpoint.rstrip('/')}/chat/completions",
                 headers=headers,
                 json=payload
             )
@@ -110,7 +110,7 @@ async def stream_summarize_transcript(
         async with httpx.AsyncClient(timeout=120.0) as client:
             async with client.stream(
                 "POST",
-                f"{api_endpoint}/chat/completions",
+                f"{api_endpoint.rstrip('/')}/chat/completions",
                 headers=headers,
                 json=payload
             ) as response:
