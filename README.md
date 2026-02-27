@@ -4,7 +4,7 @@ A self-hosted web application that summarizes YouTube videos using AI.
 
 ## Why I Built This
 
-Let's face it — a lot of YouTube videos are 10-20 minutes long but could be summarized in under a minute. I used to have dozens of tabs open, videos I was curious about but never got around to watching, even at 2x speed.
+A lot of YouTube videos are 10-20 minutes long but could be summarized in under a minute. I used to have dozens of tabs open, videos I was curious about but never got around to watching, even at 2x speed.
 
 There are plenty of YouTube summarizers out there, but I wanted something different: a self-hosted "read it later" experience. Instead of pasting a URL, reading the summary immediately, and moving on, Papertube lets you queue up videos and come back to them when you're ready.
 
@@ -65,10 +65,12 @@ uvicorn app.main:app --reload
 
 ## Configuration
 
-1. First launch will show a setup page to create the admin account
+1. First launch will show a setup page to create the admin account (if not prompted, go to `/register`)
 2. Navigate to Settings (admin only)
 3. Set your OpenAI-compatible API endpoint and token
 4. Choose your default model
+
+**Recommended:** The free [Gemini API](https://ai.google.dev/gemini-api/docs) is sufficient for most users. Use the OpenAI-compatible endpoint `https://generativelanguage.googleapis.com/v1beta/openai/` and model `gemini-2.5-flash` for fast, quality summaries.
 
 ## Chrome Extension
 
