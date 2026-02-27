@@ -72,14 +72,25 @@ uvicorn app.main:app --reload
 
 **Recommended:** The free [Gemini API](https://ai.google.dev/gemini-api/docs) is sufficient for most users. Use the OpenAI-compatible endpoint `https://generativelanguage.googleapis.com/v1beta/openai/` and model `gemini-2.5-flash` for fast, quality summaries.
 
-## Chrome Extension
+## Browser Extension
+
+Papertube includes a browser extension for Chrome, Edge, Brave, and Firefox. Download it from the **Extension** page in your Papertube instance.
+
+### Chrome / Edge / Brave
 
 1. Open `chrome://extensions/`
-2. Enable Developer Mode
-3. Click "Load unpacked"
-4. Select the `extension/` folder
-5. Configure the server URL in extension settings
-6. Login with your Papertube credentials
+2. Enable Developer Mode (toggle in top right)
+3. Drag and drop the downloaded ZIP file onto the page
+4. Configure the server URL in extension settings
+5. Login with your Papertube credentials
+
+### Firefox
+
+1. Open `about:addons`
+2. Click the gear icon → "Install Add-on From File..."
+3. Select the downloaded ZIP file
+4. Configure the server URL in extension settings
+5. Login with your Papertube credentials
 
 ## Prompt Presets
 
