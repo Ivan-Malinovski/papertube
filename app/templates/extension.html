@@ -1,0 +1,305 @@
+{% extends "base.html" %}
+
+{% block title %}Browser Extension - {{ settings.site_name }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Browser Extension</h1>
+    <p>Install the Papertube browser extension to summarize videos directly from YouTube</p>
+</div>
+
+<div class="card">
+    <h2>Download & Install</h2>
+    <p style="color: var(--muted-text); margin-bottom: 1.5rem;">
+        Choose your browser below to download the appropriate extension version.
+    </p>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
+        <!-- Chrome/Edge/Brave -->
+        <div class="browser-option">
+            <div class="browser-icon">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <circle cx="12" cy="12" r="4"/>
+                    <line x1="12" y1="2" x2="12" y2="8"/>
+                    <line x1="12" y1="16" x2="12" y2="22"/>
+                </svg>
+            </div>
+            <h3>Chrome / Edge / Brave</h3>
+            <p>Chromium-based browsers</p>
+            <a href="/extension/download" class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem;">
+                <i data-lucide="download"></i>
+                Download
+            </a>
+        </div>
+
+        <!-- Firefox -->
+        <div class="browser-option">
+            <div class="browser-icon">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2c0 0-3 1.5-3 4.5 0 1.5 1 2.5 2 3l-2 3c0 0-2-1-3.5 0C3 13.5 2 15 2 17c0 2.5 2 5 5 5h10c3 0 5-2.5 5-5 0-2-1-3.5-3.5-4-1.5-1-3.5 0-3.5 0l-2-3c1-.5 2-1.5 2-3 0-3-3-4.5-3-4.5z"/>
+                </svg>
+            </div>
+            <h3>Firefox</h3>
+            <p>Mozilla Firefox browser</p>
+            <a href="/extension/firefox/download" class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem;">
+                <i data-lucide="download"></i>
+                Download
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Installation Instructions</h2>
+
+    <div class="browser-tabs">
+        <button class="browser-tab active" data-tab="chromium">Chrome / Edge / Brave</button>
+        <button class="browser-tab" data-tab="firefox">Firefox</button>
+    </div>
+
+    <!-- Chrome/Edge/Brave Instructions -->
+    <div class="install-section active" id="tab-chromium">
+        <div class="install-step">
+            <div class="step-number">1</div>
+            <div class="step-content">
+                <h3>Download the Extension</h3>
+                <p>Click the "Chrome / Edge / Brave" download button above to get the extension ZIP file.</p>
+            </div>
+        </div>
+
+        <div class="install-step">
+            <div class="step-number">2</div>
+            <div class="step-content">
+                <h3>Extract the ZIP File</h3>
+                <p>Extract the downloaded ZIP file to a folder on your computer. Remember the location of this folder.</p>
+            </div>
+        </div>
+
+        <div class="install-step">
+            <div class="step-number">3</div>
+            <div class="step-content">
+                <h3>Open Extensions Page</h3>
+                <p>Type <code>chrome://extensions</code> in your browser's address bar and press Enter.</p>
+            </div>
+        </div>
+
+        <div class="install-step">
+            <div class="step-number">4</div>
+            <div class="step-content">
+                <h3>Enable Developer Mode</h3>
+                <p>Look for a toggle switch labeled "Developer mode" in the top right corner and turn it on.</p>
+            </div>
+        </div>
+
+        <div class="install-step">
+            <div class="step-number">5</div>
+            <div class="step-content">
+                <h3>Load the Extension</h3>
+                <p>Click the "Load unpacked" button and select the extracted extension folder.</p>
+            </div>
+        </div>
+
+        <div class="install-step">
+            <div class="step-number">6</div>
+            <div class="step-content">
+                <h3>Configure & Use</h3>
+                <p>Click the extension icon in your browser toolbar, enter your Papertube credentials, and you're ready to go!</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firefox Instructions -->
+    <div class="install-section" id="tab-firefox">
+        <div class="install-step">
+            <div class="step-number">1</div>
+            <div class="step-content">
+                <h3>Download the Extension</h3>
+                <p>Click the "Firefox" download button above to get the extension ZIP file.</p>
+            </div>
+        </div>
+
+        <div class="install-step">
+            <div class="step-number">2</div>
+            <div class="step-content">
+                <h3>Extract the ZIP File</h3>
+                <p>Extract the downloaded ZIP file to a folder on your computer. Remember the location of this folder.</p>
+            </div>
+        </div>
+
+        <div class="install-step">
+            <div class="step-number">3</div>
+            <div class="step-content">
+                <h3>Open Firefox Debugging</h3>
+                <p>Type <code>about:debugging#/runtime/this-firefox</code> in your browser's address bar and press Enter.</p>
+            </div>
+        </div>
+
+        <div class="install-step">
+            <div class="step-number">4</div>
+            <div class="step-content">
+                <h3>Load the Extension</h3>
+                <p>Click the "Load Temporary Add-on" button and select the <code>manifest.json</code> file from the extracted folder.</p>
+            </div>
+        </div>
+
+        <div class="install-step">
+            <div class="step-number">5</div>
+            <div class="step-content">
+                <h3>Configure & Use</h3>
+                <p>Click the extension icon in your browser toolbar, enter your Papertube credentials, and you're ready to go!</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const tabs = document.querySelectorAll('.browser-tab');
+    const sections = document.querySelectorAll('.install-section');
+
+    tabs.forEach(tab => {
+        tab.addEventListener('click', function() {
+            const targetTab = this.getAttribute('data-tab');
+
+            tabs.forEach(t => t.classList.remove('active'));
+            sections.forEach(s => s.classList.remove('active'));
+
+            this.classList.add('active');
+            document.getElementById('tab-' + targetTab).classList.add('active');
+        });
+    });
+});
+</script>
+
+<div class="card" style="background: var(--bg-secondary); border: 1px solid var(--border-color);">
+    <h3 style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+        <i data-lucide="info" style="width: 20px;"></i>
+        Note
+    </h3>
+    <p style="color: var(--muted-text); margin: 0;">
+        Since this extension is not published to the official browser stores, you'll need to reinstall it if you clear your browser data.
+        The extension works on Chrome, Edge, Firefox, Brave, and other Chromium-based browsers.
+    </p>
+</div>
+
+<style>
+.install-step {
+    display: flex;
+    gap: 1rem;
+    padding: 1rem 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.install-step:last-child {
+    border-bottom: none;
+}
+
+.step-number {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--primary-color);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    flex-shrink: 0;
+}
+
+.step-content h3 {
+    margin: 0 0 0.5rem 0;
+    font-size: 1.1rem;
+}
+
+.step-content p {
+    margin: 0;
+    color: var(--muted-text);
+}
+
+.step-content code {
+    background: var(--code-bg);
+    padding: 0.2rem 0.4rem;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 0.9rem;
+}
+
+.browser-option {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1.5rem;
+    text-align: center;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.browser-option:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="dark"] .browser-option:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.browser-icon {
+    width: 64px;
+    height: 64px;
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 1rem;
+    color: var(--primary-color);
+}
+
+.browser-option h3 {
+    margin: 0 0 0.5rem;
+    font-size: 1.1rem;
+}
+
+.browser-option p {
+    color: var(--muted-text);
+    margin: 0 0 0.5rem;
+    font-size: 0.9rem;
+}
+
+.browser-tabs {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.browser-tab {
+    padding: 0.75rem 1.5rem;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--muted-text);
+    cursor: pointer;
+    font-size: 1rem;
+    transition: all 0.2s ease;
+}
+
+.browser-tab.active {
+    color: var(--primary-color);
+    border-bottom-color: var(--primary-color);
+}
+
+.browser-tab:hover {
+    color: var(--text-color);
+}
+
+.install-section {
+    display: none;
+}
+
+.install-section.active {
+    display: block;
+}
+</style>
+{% endblock %}

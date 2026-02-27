@@ -4,7 +4,10 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Union
 
 from fastapi import FastAPI, Request, Form, HTTPException, Depends, status
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse, FileResponse
+from fastapi.datastructures import Headers
+import zipfile
+import io
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -57,7 +60,7 @@ app = FastAPI(
 # Secure CORS for Browser Extensions ONLY (No public web origins)
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"^chrome-extension://.*$",
+    allow_origin_regex=r"^(chrome-extension|moz-extension)://.*$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -576,3 +579,62 @@ async def check_summary_by_url(url: str, user = Depends(require_user)):
 async def delete_summary_api(summary_id: int, user = Depends(require_user)):
     await db_delete_summary(summary_id, user["id"])
     return {"success": True}
+
+# --- Extension Routes ---
+
+@app.get("/extension", response_class=HTMLResponse)
+async def extension_page(request: Request, user = Depends(require_user)):
+    settings = await get_settings()
+    return templates.TemplateResponse("extension.html", {
+        "request": request,
+        "user": user,
+        "settings": settings
+    })
+
+@app.get("/extension/download")
+async def download_extension(user = Depends(require_user)):
+    """Download the extension as a ZIP file."""
+    extension_dir = BASE_DIR.parent / "extension"
+
+    # Create a ZIP file in memory
+    zip_buffer = io.BytesIO()
+
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        for file_path in extension_dir.rglob("*"):
+            if file_path.is_file():
+                arcname = file_path.relative_to(extension_dir)
+                zip_file.write(file_path, arcname)
+
+    zip_buffer.seek(0)
+
+    return StreamingResponse(
+        io.BytesIO(zip_buffer.getvalue()),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": "attachment; filename=papertube-extension.zip"
+        }
+    )
+
+@app.get("/extension/firefox/download")
+async def download_extension_firefox(user = Depends(require_user)):
+    """Download the Firefox extension as a ZIP file."""
+    extension_dir = BASE_DIR.parent / "extension-firefox"
+
+    # Create a ZIP file in memory
+    zip_buffer = io.BytesIO()
+
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        for file_path in extension_dir.rglob("*"):
+            if file_path.is_file():
+                arcname = file_path.relative_to(extension_dir)
+                zip_file.write(file_path, arcname)
+
+    zip_buffer.seek(0)
+
+    return StreamingResponse(
+        io.BytesIO(zip_buffer.getvalue()),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": "attachment; filename=papertube-extension-firefox.zip"
+        }
+    )
