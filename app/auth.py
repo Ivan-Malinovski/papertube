@@ -11,7 +11,7 @@ from .database import get_user_by_username
 # Security configuration
 SECRET_KEY = os.getenv("SECRET_KEY", "papertube-super-secret-key-12345")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 1 week
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 365  # 1 year (stay logged in until manual logout)
 
 # Use PBKDF2 with HMAC-SHA256 for maximum reliability and security.
 # This algorithm is built-in and does NOT have the 72-character limit that caused errors.
@@ -37,7 +37,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=15)
+        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
