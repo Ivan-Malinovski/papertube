@@ -4,7 +4,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Any, List, Dict
 
-DB_PATH = Path(__file__).parent.parent / "data" / "summaries.db"
+from .db_manager import get_db_pool
+from .config import get_database_path
+
+DB_PATH = Path(__file__).parent.parent / get_database_path()
 
 PROMPT_PRESETS = {
     "brief": "Provide a brief 2-3 sentence summary of this YouTube video transcript.",
@@ -111,7 +114,8 @@ async def init_db() -> None:
 async def get_user_count() -> int:
     """Return the total number of users."""
     count = 0
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    pool = await get_db_pool(str(DB_PATH))
+    async with pool.get_connection() as db:
         cursor = await db.execute("SELECT COUNT(*) FROM users")
         row = await cursor.fetchone()
         count = row[0] if row else 0
@@ -120,7 +124,8 @@ async def get_user_count() -> int:
 
 async def create_user(username: str, password_hash: str, full_name: str = "", is_admin: bool = False) -> int:
     """Create a new user."""
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    pool = await get_db_pool(str(DB_PATH))
+    async with pool.get_connection() as db:
         cursor = await db.execute(
             "INSERT INTO users (username, password_hash, full_name, is_admin) VALUES (?, ?, ?, ?)",
             (username, password_hash, full_name, 1 if is_admin else 0)
@@ -132,7 +137,8 @@ async def create_user(username: str, password_hash: str, full_name: str = "", is
 
 async def get_user_by_username(username: str) -> Optional[Dict[str, Any]]:
     """Fetch user by username."""
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    pool = await get_db_pool(str(DB_PATH))
+    async with pool.get_connection() as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT * FROM users WHERE username = ?", (username,)) as cursor:
             row = await cursor.fetchone()
@@ -141,7 +147,8 @@ async def get_user_by_username(username: str) -> Optional[Dict[str, Any]]:
 
 async def get_user_by_id(user_id: int) -> Optional[Dict[str, Any]]:
     """Fetch user by ID."""
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    pool = await get_db_pool(str(DB_PATH))
+    async with pool.get_connection() as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT * FROM users WHERE id = ?", (user_id,)) as cursor:
             row = await cursor.fetchone()
@@ -150,7 +157,8 @@ async def get_user_by_id(user_id: int) -> Optional[Dict[str, Any]]:
 
 async def get_users() -> List[Dict[str, Any]]:
     """Get all users with summary counts."""
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    pool = await get_db_pool(str(DB_PATH))
+    async with pool.get_connection() as db:
         db.row_factory = aiosqlite.Row
         query = """
             SELECT u.*, COUNT(s.id) as summary_count 
@@ -167,10 +175,9 @@ async def get_users() -> List[Dict[str, Any]]:
 
 async def delete_user(user_id: int) -> bool:
     """Delete a user and their associated summaries."""
-    async with aiosqlite.connect(str(DB_PATH)) as db:
-        # Delete summaries first (foreign key constraint)
+    pool = await get_db_pool(str(DB_PATH))
+    async with pool.get_connection() as db:
         await db.execute("DELETE FROM summaries WHERE user_id = ?", (user_id,))
-        # Delete user
         await db.execute("DELETE FROM users WHERE id = ?", (user_id,))
         await db.commit()
         return True
@@ -179,7 +186,8 @@ async def delete_user(user_id: int) -> bool:
 
 async def update_user_role(user_id: int, is_admin: bool) -> bool:
     """Update a user's admin status."""
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    pool = await get_db_pool(str(DB_PATH))
+    async with pool.get_connection() as db:
         await db.execute("UPDATE users SET is_admin = ? WHERE id = ?", (1 if is_admin else 0, user_id))
         await db.commit()
     return True
@@ -187,7 +195,8 @@ async def update_user_role(user_id: int, is_admin: bool) -> bool:
 
 async def update_user_profile(user_id: int, full_name: str) -> bool:
     """Update a user's profile details."""
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    pool = await get_db_pool(str(DB_PATH))
+    async with pool.get_connection() as db:
         await db.execute("UPDATE users SET full_name = ? WHERE id = ?", (full_name, user_id))
         await db.commit()
     return True
@@ -195,7 +204,8 @@ async def update_user_profile(user_id: int, full_name: str) -> bool:
 
 async def update_user_password(user_id: int, password_hash: str) -> bool:
     """Update a user's password."""
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    pool = await get_db_pool(str(DB_PATH))
+    async with pool.get_connection() as db:
         await db.execute("UPDATE users SET password_hash = ? WHERE id = ?", (password_hash, user_id))
         await db.commit()
     return True
@@ -217,7 +227,8 @@ async def save_summary(
 ) -> int:
     """Save a summary for a specific user."""
     summary_id = 0
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    pool = await get_db_pool(str(DB_PATH))
+    async with pool.get_connection() as db:
         cursor = await db.execute("""
             INSERT INTO summaries
             (user_id, video_id, video_title, video_url, channel_name, duration, thumbnail_url, transcript, summary, prompt_preset, model, api_endpoint)
@@ -232,7 +243,8 @@ async def save_summary(
 async def get_summaries(user_id: int, search: Optional[str] = None, limit: int = 100, unread_only: bool = False) -> List[Dict[str, Any]]:
     """Get summaries for a specific user."""
     rows = []
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    pool = await get_db_pool(str(DB_PATH))
+    async with pool.get_connection() as db:
         db.row_factory = aiosqlite.Row
         
         where_clauses = ["user_id = ?"]
@@ -258,7 +270,8 @@ async def get_summaries(user_id: int, search: Optional[str] = None, limit: int =
 
 async def get_summary(summary_id: int) -> Optional[Dict[str, Any]]:
     """Fetch a single summary (anyone can fetch for now, will keep basic for simplified logic)."""
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    pool = await get_db_pool(str(DB_PATH))
+    async with pool.get_connection() as db:
         db.row_factory = aiosqlite.Row
         async with db.execute("SELECT * FROM summaries WHERE id = ?", (summary_id,)) as cursor:
             row = await cursor.fetchone()
@@ -267,7 +280,8 @@ async def get_summary(summary_id: int) -> Optional[Dict[str, Any]]:
 
 async def delete_summary(summary_id: int, user_id: int) -> bool:
     """Delete a summary if it belongs to the user."""
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    pool = await get_db_pool(str(DB_PATH))
+    async with pool.get_connection() as db:
         await db.execute("DELETE FROM summaries WHERE id = ? AND user_id = ?", (summary_id, user_id))
         await db.commit()
     return True
@@ -276,7 +290,8 @@ async def delete_summary(summary_id: int, user_id: int) -> bool:
 async def get_settings() -> Dict[str, Any]:
     """Get global settings."""
     settings = {}
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    pool = await get_db_pool(str(DB_PATH))
+    async with pool.get_connection() as db:
         cursor = await db.execute("SELECT key, value FROM settings")
         rows = await cursor.fetchall()
         settings = {row[0]: row[1] for row in rows}
@@ -306,7 +321,8 @@ async def update_setting(key: str, value: Any) -> bool:
     else:
         serialized_value = str(value)
 
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    pool = await get_db_pool(str(DB_PATH))
+    async with pool.get_connection() as db:
         await db.execute(
             "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
             (key, serialized_value)
@@ -317,7 +333,8 @@ async def update_setting(key: str, value: Any) -> bool:
 
 async def mark_summary_read(summary_id: int, user_id: int, is_read: bool = True) -> bool:
     """Mark a summary as read if it belongs to the user."""
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    pool = await get_db_pool(str(DB_PATH))
+    async with pool.get_connection() as db:
         await db.execute(
             "UPDATE summaries SET is_read = ? WHERE id = ? AND user_id = ?",
             (1 if is_read else 0, summary_id, user_id)
@@ -330,10 +347,10 @@ async def get_adjacent_summaries(user_id: int, current_id: int) -> Dict[str, Opt
     """Get the next (older) and previous (newer) summaries for navigation."""
     result = {"next": None, "prev": None}
 
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    pool = await get_db_pool(str(DB_PATH))
+    async with pool.get_connection() as db:
         db.row_factory = aiosqlite.Row
 
-        # Get current summary's created_at
         cursor = await db.execute("SELECT created_at FROM summaries WHERE id = ? AND user_id = ?", (current_id, user_id))
         row = await cursor.fetchone()
         if not row:
@@ -341,7 +358,6 @@ async def get_adjacent_summaries(user_id: int, current_id: int) -> Dict[str, Opt
 
         current_created = row["created_at"]
 
-        # Next: older summary (created_at < current), get the most recent of those
         cursor = await db.execute(
             "SELECT id, video_title FROM summaries WHERE user_id = ? AND created_at < ? ORDER BY created_at DESC LIMIT 1",
             (user_id, current_created)
@@ -350,7 +366,6 @@ async def get_adjacent_summaries(user_id: int, current_id: int) -> Dict[str, Opt
         if next_row:
             result["next"] = {"id": next_row["id"], "video_title": next_row["video_title"]}
 
-        # Prev: newer summary (created_at > current), get the oldest of those
         cursor = await db.execute(
             "SELECT id, video_title FROM summaries WHERE user_id = ? AND created_at > ? ORDER BY created_at ASC LIMIT 1",
             (user_id, current_created)
@@ -375,7 +390,8 @@ async def get_video_cache(video_id: str, ttl_days: int = 14) -> Optional[Dict[st
     """
     from datetime import timedelta
     
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    pool = await get_db_pool(str(DB_PATH))
+    async with pool.get_connection() as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
             """SELECT * FROM video_cache 
@@ -412,7 +428,8 @@ async def save_video_cache(
     Returns:
         True if saved successfully
     """
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    pool = await get_db_pool(str(DB_PATH))
+    async with pool.get_connection() as db:
         await db.execute(
             """INSERT OR REPLACE INTO video_cache 
                (video_id, title, channel, duration, thumbnail_url, transcript, cached_at)
