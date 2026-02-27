@@ -27,9 +27,7 @@ Chrome extension:
 The Chrome extension features a button, so you can send the video to Papertube with one click, and come back to read it later.
 
 <img width="420" height="82" alt="image" src="https://github.com/user-attachments/assets/733ac8b9-febc-4a54-824c-8a980445b8f3" />
-
-Chrome extension:
-<img width="320" height="673" alt="image" src="https://github.com/user-attachments/assets/ece4edb1-5b34-427f-953e-efddb2d4c939" />
+<img width="320" alt="image" src="https://github.com/user-attachments/assets/ece4edb1-5b34-427f-953e-efddb2d4c939" />
 
 
 ## Tech Stack
