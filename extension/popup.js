@@ -144,7 +144,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (data.exists) {
                     videoTitle.textContent = data.title;
                     videoChannel.textContent = data.channel;
-                    summaryText.textContent = data.summary;
+                    // Render markdown if marked is available
+                    if (typeof marked !== 'undefined') {
+                        summaryText.innerHTML = marked.parse(data.summary);
+                    } else {
+                        summaryText.textContent = data.summary;
+                    }
                     viewFullBtn.href = `${serverUrl}/summary/${data.id}`;
                     viewFullBtn.classList.remove('hidden');
                     summarizeBtn.textContent = "Summarize Again";
