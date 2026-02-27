@@ -2,10 +2,13 @@
 
 A self-hosted web application that summarizes YouTube videos using AI.
 
-I built this because a lot of videos are 10-20 minutes long, but can easily be summarized and read in less than a minute. I had a TON of YouTube tabs open, where I was curious about the content, but couldn't be bothered to watch them, even at 2x speed.
-There are many YouTube summarizers available, but I built this one, because I wanted a selfhosted "read it later" kind of app, rather than having to open a page, paste an URL, read it all immediately, and then go back to what I was doing.
+## Why I Built This
 
-Papertube includes a Chromium extension, that provides a button that sends a video summary to Papertube, so you can come back and read it later.
+Let's face it — a lot of YouTube videos are 10-20 minutes long but could be summarized in under a minute. I used to have dozens of tabs open, videos I was curious about but never got around to watching, even at 2x speed.
+
+There are plenty of YouTube summarizers out there, but I wanted something different: a self-hosted "read it later" experience. Instead of pasting a URL, reading the summary immediately, and moving on, Papertube lets you queue up videos and come back to them when you're ready.
+
+The included Chromium extension makes this seamless — just hit "Summarize" on any YouTube video, and it's saved to your Papertube history for later.
 
 ## Features
 
@@ -18,13 +21,18 @@ Papertube includes a Chromium extension, that provides a button that sends a vid
 - Chat with your video transcripts
 
 ## Screenshots
-<img width="420" alt="image" src="https://github.com/user-attachments/assets/6799fdb8-79ef-44a3-8880-de6a2984538a" />
-<img width="420" alt="image" src="https://github.com/user-attachments/assets/e76b09b1-f549-4ad2-bb06-52037a4c1b34" />
-<img width="420" alt="image" src="https://github.com/user-attachments/assets/b9a7f8b7-3521-4092-acf2-20e11fa30504" />
-<img width="420" alt="image" src="https://github.com/user-attachments/assets/ece4edb1-5b34-427f-953e-efddb2d4c939" />
-<img width="420" alt="image" src="https://github.com/user-attachments/assets/733ac8b9-febc-4a54-824c-8a980445b8f3" />
 
-
+<p align="center">
+  <img width="400" alt="Home page" src="https://github.com/user-attachments/assets/6799fdb8-79ef-44a3-8880-de6a2984538a" />
+  <img width="400" alt="Summary view" src="https://github.com/user-attachments/assets/e76b09b1-f549-4ad2-bb06-52037a4c1b34" />
+</p>
+<p align="center">
+  <img width="400" alt="History" src="https://github.com/user-attachments/assets/b9a7f8b7-3521-4092-acf2-20e11fa30504" />
+  <img width="400" alt="Chat with transcript" src="https://github.com/user-attachments/assets/ece4edb1-5b34-427f-953e-efddb2d4c939" />
+</p>
+<p align="center">
+  <img width="400" alt="Chrome extension" src="https://github.com/user-attachments/assets/733ac8b9-febc-4a54-824c-8a980445b8f3" />
+</p>
 
 ## Tech Stack
 
@@ -96,6 +104,13 @@ Add your own custom presets in Settings.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SECRET_KEY` | (random) | JWT secret key |
+
+## Credits
+
+Papertube wouldn't be possible without these projects:
+
+- **[youtube-transcript-api](https://github.com/jdepoix/youtube-transcript-api)** — Makes transcript extraction dead simple
+- **[FastAPI](https://fastapi.tiangolo.com/)** — The excellent async Python web framework
 
 ## Disclaimer
 
