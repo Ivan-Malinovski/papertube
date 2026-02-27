@@ -23,7 +23,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Load current settings
     const settings = await chrome.storage.local.get(['serverUrl', 'lastPreset', 'auth_token']);
-    const serverUrl = settings.serverUrl || 'http://localhost:8000';
+    // Default server URL - will be replaced at download time with actual server URL
+    const defaultServerUrl = '__SERVER_URL__';
+    const serverUrl = settings.serverUrl || defaultServerUrl;
     serverUrlInput.value = serverUrl;
 
     if (settings.lastPreset) {
@@ -35,15 +37,40 @@ document.addEventListener('DOMContentLoaded', async () => {
         settingsView.classList.toggle('hidden');
     };
 
-    // Save settings
-    saveSettingsBtn.onclick = () => {
+    // Save settings with connection test
+    saveSettingsBtn.onclick = async () => {
         const url = serverUrlInput.value.trim();
-        chrome.storage.local.set({ serverUrl: url }, () => {
-            status.textContent = 'Settings saved!';
-            status.className = 'status success';
-            setTimeout(() => { status.textContent = ''; }, 2000);
-            init();
-        });
+        if (!url) return;
+        
+        saveSettingsBtn.disabled = true;
+        saveSettingsBtn.textContent = "Testing...";
+        status.textContent = "Testing connection...";
+        status.className = "status";
+
+        try {
+            const resp = await fetch(`${url}/api/ping`);
+            if (resp.ok) {
+                await chrome.storage.local.set({ serverUrl: url });
+                status.textContent = "✓ Connected!";
+                status.className = "status success";
+                saveSettingsBtn.textContent = "Saved!";
+                setTimeout(() => {
+                    saveSettingsBtn.disabled = false;
+                    saveSettingsBtn.textContent = "Save Server URL";
+                    status.textContent = "";
+                }, 2000);
+            } else {
+                status.textContent = "✗ Failed";
+                status.className = "status error";
+                saveSettingsBtn.disabled = false;
+                saveSettingsBtn.textContent = "Save Server URL";
+            }
+        } catch (e) {
+            status.textContent = "✗ Cannot connect";
+            status.className = "status error";
+            saveSettingsBtn.disabled = false;
+            saveSettingsBtn.textContent = "Save Server URL";
+        }
     };
 
     // Login logic
@@ -78,6 +105,20 @@ document.addEventListener('DOMContentLoaded', async () => {
             loginBtn.disabled = false;
         }
     };
+
+    // Allow pressing Enter to submit login
+    usernameInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            passwordInput.focus();
+        }
+    });
+    passwordInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            loginBtn.click();
+        }
+    });
 
     openAppBtn.onclick = (e) => {
         e.preventDefault();

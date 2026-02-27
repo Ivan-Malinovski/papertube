@@ -582,6 +582,11 @@ async def api_login(request: Request, data: dict):
     access_token = create_access_token(data={"sub": username})
     return {"access_token": access_token, "token_type": "bearer", "username": username}
 
+@app.get("/api/ping")
+async def api_ping():
+    """Simple ping endpoint to test server connectivity (no auth required)."""
+    return {"ok": True}
+
 @app.post("/api/summarize")
 @rate_limit(max_requests=10, window_seconds=60)
 async def api_summarize(request: Request, user = Depends(require_user)):
@@ -690,9 +695,12 @@ async def extension_page(request: Request, user = Depends(require_user)):
     })
 
 @app.get("/extension/download")
-async def download_extension(user = Depends(require_user)):
+async def download_extension(request: Request, user = Depends(require_user)):
     """Download the extension as a ZIP file."""
     extension_dir = BASE_DIR.parent / "extension"
+    
+    # Get the server URL from the request for the default server URL in popup.js
+    server_url = str(request.base_url).rstrip('/')
 
     # Create a ZIP file in memory
     zip_buffer = io.BytesIO()
@@ -701,7 +709,14 @@ async def download_extension(user = Depends(require_user)):
         for file_path in extension_dir.rglob("*"):
             if file_path.is_file():
                 arcname = file_path.relative_to(extension_dir)
-                zip_file.write(file_path, arcname)
+                
+                # Replace placeholder in popup.js with actual server URL
+                if file_path.name == "popup.js":
+                    content = file_path.read_text(encoding='utf-8')
+                    content = content.replace("'__SERVER_URL__'", f"'{server_url}'")
+                    zip_file.writestr(str(arcname), content)
+                else:
+                    zip_file.write(file_path, arcname)
 
     zip_buffer.seek(0)
 
@@ -714,9 +729,12 @@ async def download_extension(user = Depends(require_user)):
     )
 
 @app.get("/extension/firefox/download")
-async def download_extension_firefox(user = Depends(require_user)):
+async def download_extension_firefox(request: Request, user = Depends(require_user)):
     """Download the Firefox extension as a ZIP file."""
     extension_dir = BASE_DIR.parent / "extension-firefox"
+    
+    # Get the server URL from the request for the default server URL in popup.js
+    server_url = str(request.base_url).rstrip('/')
 
     # Create a ZIP file in memory
     zip_buffer = io.BytesIO()
@@ -725,7 +743,14 @@ async def download_extension_firefox(user = Depends(require_user)):
         for file_path in extension_dir.rglob("*"):
             if file_path.is_file():
                 arcname = file_path.relative_to(extension_dir)
-                zip_file.write(file_path, arcname)
+                
+                # Replace placeholder in popup.js with actual server URL
+                if file_path.name == "popup.js":
+                    content = file_path.read_text(encoding='utf-8')
+                    content = content.replace("'__SERVER_URL__'", f"'{server_url}'")
+                    zip_file.writestr(str(arcname), content)
+                else:
+                    zip_file.write(file_path, arcname)
 
     zip_buffer.seek(0)
 
