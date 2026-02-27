@@ -14,9 +14,9 @@ PROMPT_PRESETS = {
 }
 
 DEFAULT_SETTINGS = {
-    "api_endpoint": "https://nano-gpt.com/api/v1",
-    "api_token": "sk-nano-eee303da-3861-4dba-b1bc-0cf007802c39",
-    "default_model": "meta-llama/llama-4-maverick",
+    "api_endpoint": "https://generativelanguage.googleapis.com/v1beta/openai/",
+    "api_token": "sk-your-api-token-here",
+    "default_model": "gemini-2.0-flash",
     "dark_mode": "false",
     "prompt_presets": json.dumps(PROMPT_PRESETS)
 }
@@ -79,6 +79,19 @@ async def init_db() -> None:
             CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY,
                 value TEXT
+            )
+        """)
+
+        # Video cache table (shared across users)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS video_cache (
+                video_id TEXT PRIMARY KEY,
+                title TEXT,
+                channel TEXT,
+                duration TEXT,
+                thumbnail_url TEXT,
+                transcript TEXT,
+                cached_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
 
@@ -347,3 +360,65 @@ async def get_adjacent_summaries(user_id: int, current_id: int) -> Dict[str, Opt
             result["prev"] = {"id": prev_row["id"], "video_title": prev_row["video_title"]}
 
     return result
+
+
+async def get_video_cache(video_id: str, ttl_days: int = 14) -> Optional[Dict[str, Any]]:
+    """
+    Get cached video metadata and transcript if not expired.
+    
+    Args:
+        video_id: YouTube video ID
+        ttl_days: Cache TTL in days (default 14)
+    
+    Returns:
+        Cached data dict or None if expired/not found
+    """
+    from datetime import timedelta
+    
+    async with aiosqlite.connect(str(DB_PATH)) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """SELECT * FROM video_cache 
+               WHERE video_id = ? 
+               AND cached_at > datetime('now', ?)
+            """,
+            (video_id, f"-{ttl_days} days")
+        )
+        row = await cursor.fetchone()
+        if row:
+            return dict(row)
+    return None
+
+
+async def save_video_cache(
+    video_id: str,
+    title: str,
+    channel: str,
+    duration: str,
+    thumbnail_url: str,
+    transcript: str
+) -> bool:
+    """
+    Save video metadata and transcript to cache.
+    
+    Args:
+        video_id: YouTube video ID
+        title: Video title
+        channel: Channel name
+        duration: Video duration
+        thumbnail_url: Thumbnail URL
+        transcript: Video transcript
+    
+    Returns:
+        True if saved successfully
+    """
+    async with aiosqlite.connect(str(DB_PATH)) as db:
+        await db.execute(
+            """INSERT OR REPLACE INTO video_cache 
+               (video_id, title, channel, duration, thumbnail_url, transcript, cached_at)
+               VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """,
+            (video_id, title, channel, duration, thumbnail_url, transcript)
+        )
+        await db.commit()
+    return True

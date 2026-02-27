@@ -1,26 +1,71 @@
 import re
 import html
 import httpx
+from typing import Optional, Tuple
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
+from .database import get_video_cache, save_video_cache
+
+
+VIDEO_CACHE_TTL_DAYS = 14
 
 
 def extract_video_id(url: str) -> str | None:
     """Extract YouTube video ID from various URL formats."""
-    patterns = [
-        r'(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/v\/|youtube\.com\/watch\?.*v=)([a-zA-Z0-9_-]{11})',
-        r'^([a-zA-Z0-9_-]{11})$'  # Direct video ID
-    ]
+    video_id, _ = validate_youtube_url(url)
+    return video_id
 
-    for pattern in patterns:
+
+def validate_youtube_url(url: str) -> Tuple[Optional[str], str]:
+    """
+    Validate YouTube URL and extract video ID.
+    
+    Returns:
+        Tuple of (video_id or None, error message)
+    """
+    if not url:
+        return None, "URL is required"
+    
+    url = url.strip()
+    
+    # Direct video ID (11 characters)
+    if re.match(r'^[a-zA-Z0-9_-]{11}$', url):
+        return url, ""
+    
+    patterns = [
+        # youtube.com/watch?v=VIDEO_ID
+        (r'(?:youtube\.com\/watch\?.*v=)([a-zA-Z0-9_-]{11})', "Invalid YouTube URL format"),
+        # youtu.be/VIDEO_ID
+        (r'(?:youtu\.be\/)([a-zA-Z0-9_-]{11})', "Invalid YouTube short URL format"),
+        # youtube.com/shorts/VIDEO_ID
+        (r'(?:youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})', "Invalid YouTube shorts URL format"),
+        # youtube.com/live/VIDEO_ID
+        (r'(?:youtube\.com\/live\/)([a-zA-Z0-9_-]{11})', "Invalid YouTube live URL format"),
+        # youtube.com/embed/VIDEO_ID
+        (r'(?:youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})', "Invalid YouTube embed URL format"),
+        # youtube.com/v/VIDEO_ID (old format)
+        (r'(?:youtube\.com\/v\/)([a-zA-Z0-9_-]{11})', "Invalid YouTube video URL format"),
+    ]
+    
+    for pattern, error_msg in patterns:
         match = re.search(pattern, url)
         if match:
-            return match.group(1)
-    return None
+            return match.group(1), ""
+    
+    return None, "Invalid YouTube URL. Supported formats: youtube.com/watch?v=ID, youtu.be/ID, youtube.com/shorts/ID"
 
 
 async def get_video_metadata(video_id: str) -> dict:
     """Fetch video title, channel name, and duration from YouTube page metadata."""
+    cached = await get_video_cache(video_id, VIDEO_CACHE_TTL_DAYS)
+    if cached:
+        return {
+            "title": cached.get("title", video_id),
+            "channel": cached.get("channel", "Unknown Channel"),
+            "duration": cached.get("duration", "Unknown"),
+            "thumbnail": cached.get("thumbnail_url", f"https://i.ytimg.com/vi/{video_id}/maxresdefault.jpg")
+        }
+    
     url = f"https://www.youtube.com/watch?v={video_id}"
     data = {
         "title": video_id,
@@ -78,6 +123,10 @@ async def get_transcript(video_id: str) -> str:
     Raises:
         ValueError: If no transcript available
     """
+    cached = await get_video_cache(video_id, VIDEO_CACHE_TTL_DAYS)
+    if cached and cached.get("transcript"):
+        return cached["transcript"]
+    
     try:
         # Create instance
         api = YouTubeTranscriptApi()
@@ -111,6 +160,18 @@ async def get_transcript(video_id: str) -> str:
                 segments.append(str(entry))
 
         full_text = " ".join(segments)
+        
+        # Cache the transcript along with metadata
+        metadata = await get_video_metadata(video_id)
+        await save_video_cache(
+            video_id=video_id,
+            title=metadata.get("title", video_id),
+            channel=metadata.get("channel", "Unknown Channel"),
+            duration=metadata.get("duration", "Unknown"),
+            thumbnail_url=metadata.get("thumbnail", f"https://i.ytimg.com/vi/{video_id}/maxresdefault.jpg"),
+            transcript=full_text
+        )
+        
         return full_text
 
     except TranscriptsDisabled:

@@ -37,7 +37,7 @@
                     <span class="btn-text" style="font-weight: 600;">Summarize</span>
                     <i data-lucide="zap" class="btn-icon" style="width: 18px; height: 18px;"></i>
                 </div>
-                <div id="btn-loading-content" class="hidden flex items-center justify-center gap-2 w-full">
+                <div id="btn-loading-content" class="hidden items-center justify-center gap-2 w-full">
                     <span class="spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
                     <div class="status-anim-container search-transition" id="status-container"
                         style="width: 135px; min-width: 135px;">
@@ -145,241 +145,323 @@
 
 {% block scripts %}
 <script>
-    document.addEventListener('DOMContentLoaded', () => {
-        const form = document.getElementById('summarize-form');
-        const btn = document.getElementById('summarize-btn');
-        const cancelBtn = document.getElementById('cancel-btn');
-        const errorAlert = document.getElementById('error-alert');
-        const resultCard = document.getElementById('result-card');
-        const resultTitle = document.getElementById('result-title');
-        const resultMeta = document.getElementById('result-meta');
-        const summaryContent = document.getElementById('summary-content');
-        const viewFullBtn = document.getElementById('view-full-btn');
-        const copyBtn = document.getElementById('copy-btn');
+/**
+ * Streaming Protocol Documentation:
+ * 
+ * The server sends data in this format:
+ * 1. First chunk: JSON metadata + "\n" + summary text
+ *    - First line is JSON like: {"type":"metadata","video_title":"...","channel_name":"...","duration":"...","thumbnail_url":"..."}
+ *    - Remaining text is the beginning of the summary
+ * 2. Subsequent chunks: partial summary text
+ * 3. Final chunk: ends with "\n[ID:123]" where 123 is the database summary ID
+ */
 
-        const urlInput = document.getElementById('url');
-        const livePreview = document.getElementById('live-preview');
-        const liveThumb = document.getElementById('live-thumb');
-        const liveDuration = document.getElementById('live-duration');
-        const liveTitle = document.getElementById('live-title');
-        const liveChannel = document.getElementById('live-channel');
+const STREAM_PROTOCOL = {
+    METADATA_LINE_START: '{"type":"metadata"',
+    ID_SUFFIX_PATTERN: /\n\[ID:(\d+)\]$/,
+    TYPING_SPEED_MS: 25,
+    CHUNK_SIZES: {
+        FAST: 5,
+        MEDIUM: 3,
+        SLOW: 1
+    }
+};
 
-        let currentSummaryText = "";
-        let abortController = null;
-        let metadataAbortController = null;
-        let typingInterval = null;
+document.addEventListener('DOMContentLoaded', () => {
+    const form = document.getElementById('summarize-form');
+    const btn = document.getElementById('summarize-btn');
+    const cancelBtn = document.getElementById('cancel-btn');
+    const errorAlert = document.getElementById('error-alert');
+    const resultCard = document.getElementById('result-card');
+    const resultTitle = document.getElementById('result-title');
+    const resultMeta = document.getElementById('result-meta');
+    const summaryContent = document.getElementById('summary-content');
+    const viewFullBtn = document.getElementById('view-full-btn');
 
-        form.addEventListener('submit', async (e) => {
-            e.preventDefault();
+    const defaultContent = document.getElementById('btn-default-content');
+    const loadingContent = document.getElementById('btn-loading-content');
+    defaultContent.style.display = 'flex';
+    loadingContent.style.display = 'none';
+    loadingContent.classList.add('hidden');
+    const copyBtn = document.getElementById('copy-btn');
 
-            // UI state
-            const defaultContent = document.getElementById('btn-default-content');
-            const loadingContent = document.getElementById('btn-loading-content');
-            const statusContainer = document.getElementById('status-container');
+    const urlInput = document.getElementById('url');
+    const livePreview = document.getElementById('live-preview');
+    const liveThumb = document.getElementById('live-thumb');
+    const liveDuration = document.getElementById('live-duration');
+    const liveTitle = document.getElementById('live-title');
+    const liveChannel = document.getElementById('live-channel');
 
-            btn.classList.add('loading');
-            btn.disabled = true;
-            document.getElementById('summarize-form').classList.add('form-loading');
-            defaultContent.classList.add('hidden');
-            loadingContent.classList.remove('hidden');
+    let currentSummaryText = "";
+    let abortController = null;
+    let metadataAbortController = null;
+    let typingInterval = null;
 
-            cancelBtn.classList.remove('hidden');
-            errorAlert.classList.add('hidden');
-            resultCard.classList.add('hidden');
+    /**
+     * Parse metadata from the first chunk of the stream.
+     * @param {string} chunk - The first chunk containing metadata JSON
+     * @returns {Object|null} - Parsed metadata or null on error
+     */
+    function parseMetadataChunk(chunk) {
+        const firstNewlineIndex = chunk.indexOf('\n');
+        if (firstNewlineIndex === -1) return null;
+        
+        const metadataRaw = chunk.substring(0, firstNewlineIndex);
+        const remainingText = chunk.substring(firstNewlineIndex + 1);
+        
+        try {
+            const metadata = JSON.parse(metadataRaw);
+            return { metadata, remainingText };
+        } catch (e) {
+            console.error("Metadata parse error", e);
+            return null;
+        }
+    }
 
-            // Progress Steps Logic
-            const modelName = "{{ settings.default_model.split('/')[-1] if settings.default_model else 'AI' }}";
-            const steps = [
-                "Loading video metadata...",
-                "Extracting transcription...",
-                `Sending to ${modelName}...`,
-                "Awaiting summary..."
-            ];
+    /**
+     * Update the video preview UI with metadata.
+     * @param {Object} metadata - Video metadata from server
+     */
+    function updateVideoPreview(metadata) {
+        resultTitle.textContent = metadata.video_title || 'Summarized Video';
+        resultMeta.innerHTML = `
+            <span class="flex items-center gap-2"><i data-lucide="user"></i> ${metadata.channel_name || 'Unknown Channel'}</span>
+            <span class="flex items-center gap-2"><i data-lucide="clock"></i> ${metadata.duration || 'Unknown'}</span>
+            <span class="flex items-center gap-2"><i data-lucide="calendar"></i> Just Now</span>
+        `;
+        lucide.createIcons({ targets: '#result-meta' });
 
-            let currentStep = 0;
-            const updateStatus = () => {
-                const currentEl = statusContainer.querySelector('.status-anim-text.active');
-                if (currentStep < steps.length) {
-                    if (currentEl) {
-                        currentEl.classList.remove('active');
-                        currentEl.classList.add('exit');
-                        setTimeout(() => currentEl.remove(), 400);
-                    }
-
-                    // Small delay to ensure the browser registers the 'off-screen' state first
-                    setTimeout(() => {
-                        const nextEl = document.createElement('span');
-                        nextEl.className = 'status-anim-text active';
-                        nextEl.textContent = steps[currentStep];
-                        statusContainer.appendChild(nextEl);
-                        currentStep++;
-                    }, 50);
-                }
-            };
-
-            // Start first step immediately
-            statusContainer.innerHTML = '';
-            updateStatus();
-
-            // Interval to advance steps if the request is taking longer
-            const statusInterval = setInterval(() => {
-                if (currentStep < steps.length) {
-                    updateStatus();
-                } else {
-                    clearInterval(statusInterval);
-                }
-            }, 2500); // Transition every 2.5 seconds
-
-            const formData = new FormData(form);
-            abortController = new AbortController();
-
-            try {
-                const response = await fetch('/summarize/stream', {
-                    method: 'POST',
-                    body: formData,
-                    signal: abortController.signal
-                });
-
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.error || 'Something went wrong');
-                }
-
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-                let isFirstChunk = true;
-                let summaryId = null;
-
-                // Smoothing logic variables
-                let textBuffer = "";
-                let displayBuffer = "";
-                let isStreamingDone = false;
-                currentSummaryText = ""; // Full text for final save/display
-
-                // Transition UI to the result card early
-                resultCard.classList.remove('hidden');
-                summaryContent.innerHTML = '<div class="streaming-status"><div class="dot"></div> Generating summary...</div><div class="summary-placeholder"></div><span class="typing-line"></span>';
-                const summaryPlaceholder = resultCard.querySelector('.summary-placeholder');
-                const typingLine = resultCard.querySelector('.typing-line');
-
-                // Smooth typing loop
-                const updateDisplay = () => {
-                    if (textBuffer.length > 0) {
-                        // Take 1-3 characters based on how backed up we are to keep pace
-                        const charsToTake = textBuffer.length > 50 ? 5 : (textBuffer.length > 20 ? 3 : 1);
-                        const chunk = textBuffer.substring(0, charsToTake);
-                        textBuffer = textBuffer.substring(charsToTake);
-                        displayBuffer += chunk;
-
-                        if (typeof marked !== 'undefined') {
-                            summaryPlaceholder.innerHTML = marked.parse(displayBuffer);
-                        } else {
-                            summaryPlaceholder.textContent = displayBuffer;
-                        }
-
-                        if (displayBuffer.length > 5 && resultCard.getBoundingClientRect().top > window.innerHeight) {
-                            resultCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                        }
-                    } else if (isStreamingDone) {
-                        clearInterval(typingInterval);
-                        onStreamingComplete();
-                    }
-                };
-
-                typingInterval = setInterval(updateDisplay, 25); // ~40 chars per second
-
-                const onStreamingComplete = () => {
-                    if (summaryId) viewFullBtn.href = `/summary/${summaryId}`;
-                    if (typingLine) typingLine.remove();
-                    const streamHeader = resultCard.querySelector('.streaming-status');
-                    if (streamHeader) streamHeader.innerHTML = '<i data-lucide="check-circle" style="width: 16px; height: 16px; color: #10b981;"></i> Summary Complete';
-                    if (window.lucide) lucide.createIcons({ targets: '.streaming-status' });
-                };
-
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) {
-                        isStreamingDone = true;
-                        break;
-                    }
-
-                    const chunk = decoder.decode(value, { stream: true });
-
-                    if (isFirstChunk) {
-                        const firstNewlineIndex = chunk.indexOf('\n');
-                        if (firstNewlineIndex !== -1) {
-                            const metadataRaw = chunk.substring(0, firstNewlineIndex);
-                            const remainingText = chunk.substring(firstNewlineIndex + 1);
-
-                            try {
-                                const metadata = JSON.parse(metadataRaw);
-                                resultTitle.textContent = metadata.video_title || 'Summarized Video';
-                                resultMeta.innerHTML = `
-                                    <span class="flex items-center gap-2"><i data-lucide="user"></i> ${metadata.channel_name || 'Unknown Channel'}</span>
-                                    <span class="flex items-center gap-2"><i data-lucide="clock"></i> ${metadata.duration || 'Unknown'}</span>
-                                    <span class="flex items-center gap-2"><i data-lucide="calendar"></i> Just Now</span>
-                                `;
-                                lucide.createIcons({ targets: '#result-meta' });
-
-                                if (metadata.thumbnail_url) {
-                                    const resultThumbnail = document.getElementById('result-thumbnail');
-                                    const resultThumbnailContainer = document.getElementById('result-thumbnail-container');
-                                    const resultDuration = document.getElementById('result-duration');
-                                    resultThumbnail.src = metadata.thumbnail_url;
-                                    resultThumbnailContainer.style.display = 'block';
-                                    if (metadata.duration && metadata.duration !== 'Unknown') {
-                                        resultDuration.textContent = metadata.duration;
-                                        resultDuration.style.display = 'block';
-                                    }
-                                }
-
-                                if (statusInterval) clearInterval(statusInterval);
-                                statusContainer.innerHTML = '<span class="status-anim-text active">Summarizing results...</span>';
-
-                            } catch (e) {
-                                console.error("Metadata parse error", e);
-                            }
-
-                            textBuffer += remainingText;
-                            currentSummaryText += remainingText;
-                            isFirstChunk = false;
-                        } else {
-                            continue;
-                        }
-                    } else {
-                        const idMatch = chunk.match(/\n\[ID:(\d+)\]$/);
-                        if (idMatch) {
-                            summaryId = idMatch[1];
-                            const contentOnly = chunk.replace(/\n\[ID:\d+\]$/, '');
-                            textBuffer += contentOnly;
-                            currentSummaryText += contentOnly;
-                        } else {
-                            textBuffer += chunk;
-                            currentSummaryText += chunk;
-                        }
-                    }
-                }
-
-                window.history.replaceState({}, document.title, "/");
-
-            } catch (err) {
-                if (err.name === 'AbortError') {
-                    console.log('Fetch aborted');
-                } else {
-                    errorAlert.textContent = err.message;
-                    errorAlert.classList.remove('hidden');
-                }
-            } finally {
-                if (statusInterval) clearInterval(statusInterval);
-                btn.classList.remove('loading');
-                btn.disabled = false;
-                document.getElementById('summarize-form').classList.remove('form-loading');
-                defaultContent.classList.remove('hidden');
-                loadingContent.classList.add('hidden');
-                cancelBtn.classList.add('hidden');
-                abortController = null;
+        if (metadata.thumbnail_url) {
+            const resultThumbnail = document.getElementById('result-thumbnail');
+            const resultThumbnailContainer = document.getElementById('result-thumbnail-container');
+            const resultDuration = document.getElementById('result-duration');
+            resultThumbnail.src = metadata.thumbnail_url;
+            resultThumbnailContainer.style.display = 'block';
+            if (metadata.duration && metadata.duration !== 'Unknown') {
+                resultDuration.textContent = metadata.duration;
+                resultDuration.style.display = 'block';
             }
-        });
+        }
+    }
+
+    /**
+     * Parse the final chunk to extract summary ID.
+     * @param {string} chunk - The chunk to parse
+     * @returns {Object} - { summaryId: string|null, contentOnly: string }
+     */
+    function parseFinalChunk(chunk) {
+        const idMatch = chunk.match(STREAM_PROTOCOL.ID_SUFFIX_PATTERN);
+        if (idMatch) {
+            return {
+                summaryId: idMatch[1],
+                contentOnly: chunk.replace(STREAM_PROTOCOL.ID_SUFFIX_PATTERN, '')
+            };
+        }
+        return { summaryId: null, contentOnly: chunk };
+    }
+
+    /**
+     * Called when streaming is complete.
+     * @param {string|null} summaryId - The saved summary ID
+     */
+    function onStreamingComplete(summaryId) {
+        if (summaryId) viewFullBtn.href = `/summary/${summaryId}`;
+        
+        const typingLine = resultCard.querySelector('.typing-line');
+        if (typingLine) typingLine.remove();
+        
+        const streamHeader = resultCard.querySelector('.streaming-status');
+        if (streamHeader) {
+            streamHeader.innerHTML = '<i data-lucide="check-circle" style="width: 16px; height: 16px; color: #10b981;"></i> Summary Complete';
+            if (window.lucide) lucide.createIcons({ targets: '.streaming-status' });
+        }
+    }
+
+    /**
+     * Smooth typing effect - processes buffer and renders to DOM.
+     */
+    function createTypingUpdater(textBufferRef, displayBufferRef, summaryPlaceholder, resultCard) {
+        return () => {
+            if (textBufferRef.current.length > 0) {
+                const len = textBufferRef.current.length;
+                let charsToTake;
+                
+                if (len > 50) charsToTake = STREAM_PROTOCOL.CHUNK_SIZES.FAST;
+                else if (len > 20) charsToTake = STREAM_PROTOCOL.CHUNK_SIZES.MEDIUM;
+                else charsToTake = STREAM_PROTOCOL.CHUNK_SIZES.SLOW;
+                
+                const chunk = textBufferRef.current.substring(0, charsToTake);
+                textBufferRef.current = textBufferRef.current.substring(charsToTake);
+                displayBufferRef.current += chunk;
+
+                if (typeof marked !== 'undefined') {
+                    summaryPlaceholder.innerHTML = marked.parse(displayBufferRef.current);
+                } else {
+                    summaryPlaceholder.textContent = displayBufferRef.current;
+                }
+
+                if (displayBufferRef.current.length > 5 && resultCard.getBoundingClientRect().top > window.innerHeight) {
+                    resultCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            } else if (isStreamingDoneRef.current) {
+                clearInterval(typingInterval);
+                onStreamingComplete(summaryIdRef.current);
+            }
+        };
+    }
+
+    let isStreamingDoneRef = { current: false };
+    let summaryIdRef = { current: null };
+
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const defaultContent = document.getElementById('btn-default-content');
+        const loadingContent = document.getElementById('btn-loading-content');
+        const statusContainer = document.getElementById('status-container');
+
+        btn.classList.add('loading');
+        btn.disabled = true;
+        document.getElementById('summarize-form').classList.add('form-loading');
+        defaultContent.style.display = 'none';
+        loadingContent.style.display = 'flex';
+        loadingContent.classList.remove('hidden');
+
+        cancelBtn.classList.remove('hidden');
+        errorAlert.classList.add('hidden');
+        resultCard.classList.add('hidden');
+
+        const modelName = "{{ settings.default_model.split('/')[-1] if settings.default_model else 'AI' }}";
+        const steps = [
+            "Loading video metadata...",
+            "Extracting transcription...",
+            `Sending to ${modelName}...`,
+            "Awaiting summary..."
+        ];
+
+        let currentStep = 0;
+        const updateStatus = () => {
+            const currentEl = statusContainer.querySelector('.status-anim-text.active');
+            if (currentStep < steps.length) {
+                if (currentEl) {
+                    currentEl.classList.remove('active');
+                    currentEl.classList.add('exit');
+                    setTimeout(() => currentEl.remove(), 400);
+                }
+
+                setTimeout(() => {
+                    const nextEl = document.createElement('span');
+                    nextEl.className = 'status-anim-text active';
+                    nextEl.textContent = steps[currentStep];
+                    statusContainer.appendChild(nextEl);
+                    currentStep++;
+                }, 50);
+            }
+        };
+
+        statusContainer.innerHTML = '';
+        updateStatus();
+
+        const statusInterval = setInterval(() => {
+            if (currentStep < steps.length) {
+                updateStatus();
+            } else {
+                clearInterval(statusInterval);
+            }
+        }, 2500);
+
+        const formData = new FormData(form);
+        abortController = new AbortController();
+
+        try {
+            const response = await fetch('/summarize/stream', {
+                method: 'POST',
+                body: formData,
+                signal: abortController.signal
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Something went wrong');
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let isFirstChunk = true;
+            summaryIdRef.current = null;
+            isStreamingDoneRef.current = false;
+
+            const textBufferRef = { current: "" };
+            const displayBufferRef = { current: "" };
+            currentSummaryText = "";
+
+            resultCard.classList.remove('hidden');
+            summaryContent.innerHTML = '<div class="streaming-status"><div class="dot"></div> Generating summary...</div><div class="summary-placeholder"></div><span class="typing-line"></span>';
+            const summaryPlaceholder = resultCard.querySelector('.summary-placeholder');
+
+            const updateDisplay = createTypingUpdater(
+                textBufferRef, 
+                displayBufferRef, 
+                summaryPlaceholder, 
+                resultCard
+            );
+
+            typingInterval = setInterval(updateDisplay, STREAM_PROTOCOL.TYPING_SPEED_MS);
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) {
+                    isStreamingDoneRef.current = true;
+                    break;
+                }
+
+                const chunk = decoder.decode(value, { stream: true });
+
+                if (isFirstChunk) {
+                    const parsed = parseMetadataChunk(chunk);
+                    if (parsed) {
+                        updateVideoPreview(parsed.metadata);
+                        textBufferRef.current += parsed.remainingText;
+                        currentSummaryText += parsed.remainingText;
+                        
+                        if (statusInterval) clearInterval(statusInterval);
+                        statusContainer.innerHTML = '<span class="status-anim-text active">Summarizing results...</span>';
+                    }
+                    isFirstChunk = false;
+                } else {
+                    const { summaryId, contentOnly } = parseFinalChunk(chunk);
+                    if (summaryId) {
+                        summaryIdRef.current = summaryId;
+                        textBufferRef.current += contentOnly;
+                        currentSummaryText += contentOnly;
+                    } else {
+                        textBufferRef.current += chunk;
+                        currentSummaryText += chunk;
+                    }
+                }
+            }
+
+            window.history.replaceState({}, document.title, "/");
+
+        } catch (err) {
+            if (err.name === 'AbortError') {
+                console.log('Fetch aborted');
+            } else {
+                errorAlert.textContent = err.message;
+                errorAlert.classList.remove('hidden');
+            }
+        } finally {
+            if (statusInterval) clearInterval(statusInterval);
+            btn.classList.remove('loading');
+            btn.disabled = false;
+            document.getElementById('summarize-form').classList.remove('form-loading');
+            defaultContent.style.display = 'flex';
+            loadingContent.style.display = 'none';
+            loadingContent.classList.add('hidden');
+            cancelBtn.classList.add('hidden');
+            abortController = null;
+        }
+    });
 
         // Live Metadata Preview Logic
         urlInput.addEventListener('input', async () => {
@@ -434,7 +516,8 @@
             btn.classList.remove('loading');
             btn.disabled = false;
             document.getElementById('summarize-form').classList.remove('form-loading');
-            document.getElementById('btn-default-content').classList.remove('hidden');
+            document.getElementById('btn-default-content').style.display = 'flex';
+            document.getElementById('btn-loading-content').style.display = 'none';
             document.getElementById('btn-loading-content').classList.add('hidden');
             cancelBtn.classList.add('hidden');
             if (typingInterval) clearInterval(typingInterval);

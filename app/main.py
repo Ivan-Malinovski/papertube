@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 import json
 from pathlib import Path
+import time
 from typing import Dict, Any, List, Optional, Union
 
 from fastapi import FastAPI, Request, Form, HTTPException, Depends, status
@@ -14,7 +15,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .transcription import extract_video_id, get_transcript, get_video_metadata
 from .llm import summarize_transcript, stream_summarize_transcript
+from .ratelimit import rate_limit
 from .database import (
+    DEFAULT_SETTINGS,
     init_db,
     save_summary,
     get_summaries,
@@ -43,6 +46,72 @@ from .auth import (
     create_access_token
 )
 import aiosqlite
+
+def check_api_token_configured(api_token: str | None) -> bool:
+    """Check if the API token is configured (not the default placeholder)."""
+    if not api_token:
+        return False
+    token = str(api_token).strip()
+    return token != "" and token != "sk-your-api-token-here"
+
+
+async def _prepare_summarize(url: str, preset: str) -> tuple[dict, str, str, str]:
+    """
+    Common logic for both summarize endpoints.
+    
+    Returns:
+        tuple of (metadata, transcript, prompt, video_id)
+    
+    Raises:
+        ValueError: If URL is invalid or API token not configured
+    """
+    video_id = extract_video_id(url)
+    if not video_id:
+        raise ValueError("Invalid YouTube URL")
+    
+    settings = await get_settings()
+    api_token = settings.get("api_token")
+    api_endpoint = settings.get("api_endpoint")
+    model = settings.get("default_model")
+    presets = settings.get("prompt_presets", PROMPT_PRESETS)
+    
+    if not check_api_token_configured(api_token):
+        raise ValueError("API Token not configured. Please set your API token in Settings before generating summaries.")
+    
+    prompt = presets.get(preset, presets.get("detailed", "Summarize this."))
+    prompt = f"You are a helpful assistant that summarizes YouTube video transcripts. {prompt}"
+    
+    metadata = await get_video_metadata(video_id)
+    transcript = await get_transcript(video_id)
+    
+    return metadata, transcript, prompt, video_id
+
+
+async def _save_summary_to_db(
+    user_id: int,
+    video_id: str,
+    metadata: dict,
+    transcript: str,
+    summary_text: str,
+    preset: str,
+    model: str,
+    api_endpoint: str
+) -> int:
+    """Save summary to database and return the summary ID."""
+    return await save_summary(
+        user_id=user_id,
+        video_id=video_id,
+        video_title=metadata["title"],
+        video_url=f"https://www.youtube.com/watch?v={video_id}",
+        channel_name=metadata["channel"],
+        duration=metadata["duration"],
+        thumbnail_url=metadata["thumbnail"],
+        transcript=transcript,
+        summary=summary_text,
+        prompt_preset=preset,
+        model=model,
+        api_endpoint=api_endpoint
+    )
 
 # Use lifespan to initialize the database
 @asynccontextmanager
@@ -86,12 +155,50 @@ async def login_page(request: Request, error: Optional[str] = None, success: Opt
         "next": request.query_params.get("next")
     })
 
+# Login rate limiting (IP-based, before authentication)
+LOGIN_ATTEMPTS: dict[str, list[float]] = {}
+LOGIN_MAX_ATTEMPTS = 5
+LOGIN_LOCKOUT_WINDOW = 900  # 15 minutes
+
+def check_login_rate_limit(client_ip: str) -> tuple[bool, str]:
+    """Check if IP is rate limited for login. Returns (is_allowed, error_message)."""
+    now = time.time()
+    attempts = LOGIN_ATTEMPTS.get(client_ip, [])
+    # Clean old attempts outside the window
+    attempts = [t for t in attempts if now - t < LOGIN_LOCKOUT_WINDOW]
+    
+    if len(attempts) >= LOGIN_MAX_ATTEMPTS:
+        remaining = LOGIN_LOCKOUT_WINDOW - (now - min(attempts))
+        minutes = int(remaining / 60) + 1
+        return False, f"Too many login attempts. Please try again in {minutes} minutes."
+    
+    # Update the attempts list
+    LOGIN_ATTEMPTS[client_ip] = attempts
+    return True, ""
+
+def record_failed_login(client_ip: str):
+    """Record a failed login attempt for rate limiting."""
+    now = time.time()
+    attempts = LOGIN_ATTEMPTS.get(client_ip, [])
+    attempts = [t for t in attempts if now - t < LOGIN_LOCKOUT_WINDOW]
+    attempts.append(now)
+    LOGIN_ATTEMPTS[client_ip] = attempts
+
 @app.post("/login")
 async def login(request: Request, username: str = Form(...), password: str = Form(...)):
+    client_ip = request.client.host
+    
+    # Check rate limit
+    allowed, error_msg = check_login_rate_limit(client_ip)
+    if not allowed:
+        return RedirectResponse(url=f"/login?error={error_msg.replace(' ', '+')}", status_code=status.HTTP_303_SEE_OTHER)
+    
     user = await get_user_by_username(username)
     next_url = request.query_params.get("next") or "/"
     
     if not user or not verify_password(password, user["password_hash"]):
+        # Record failed attempt for rate limiting
+        record_failed_login(client_ip)
         # Preserve 'next' on error
         error_url = "/login?error=Invalid+username+or+password"
         if next_url != "/":
@@ -155,6 +262,7 @@ async def index(request: Request, user = Depends(get_current_user)):
     })
 
 @app.get("/api/metadata")
+@rate_limit(max_requests=10, window_seconds=60)
 async def get_video_info(url: str, user = Depends(require_user)):
     """Fetch video metadata for live preview."""
     video_id = extract_video_id(url)
@@ -168,6 +276,7 @@ async def get_video_info(url: str, user = Depends(require_user)):
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 @app.post("/api/chat")
+@rate_limit(max_requests=10, window_seconds=60)
 async def chat(
     id: int = Form(...),
     message: str = Form(...),
@@ -184,8 +293,8 @@ async def chat(
         api_endpoint = settings.get("api_endpoint")
         model = settings.get("default_model")
 
-        if not api_token:
-            return JSONResponse(status_code=400, content={"error": "API Token not configured"})
+        if not check_api_token_configured(api_token):
+            return JSONResponse(status_code=400, content={"error": "API Token not configured. Please set your API token in Settings before generating summaries."})
 
         system_prompt = (
             f"You are a helpful assistant. The user has watched a YouTube video titled '"
@@ -220,44 +329,34 @@ async def summarize_legacy(
     user = Depends(require_user)
 ):
     """Non-streaming summarize for re-summarize from summary page."""
-    video_id = extract_video_id(url)
-    if not video_id:
-        return JSONResponse(content={"error": "Invalid YouTube URL"}, status_code=400)
     try:
+        metadata, transcript, prompt, video_id = await _prepare_summarize(url, preset)
         settings = await get_settings()
-        api_token = settings.get("api_token")
-        api_endpoint = settings.get("api_endpoint")
-        model = settings.get("default_model")
-        presets = settings.get("prompt_presets", PROMPT_PRESETS)
-        if not api_token:
-            return JSONResponse(content={"error": "API Token not configured"}, status_code=400)
-        prompt = presets.get(preset, presets.get("detailed", "Summarize this."))
-        metadata = await get_video_metadata(video_id)
-        transcript = await get_transcript(video_id)
+        
         summary_text = await summarize_transcript(
             transcript=transcript,
-            prompt=f"You are a helpful assistant that summarizes YouTube video transcripts. {prompt}",
-            api_token=api_token,
-            api_endpoint=api_endpoint,
-            model=model
+            prompt=prompt,
+            api_token=settings.get("api_token", ""),
+            api_endpoint=settings.get("api_endpoint", ""),
+            model=settings.get("default_model", "")
         )
-        summary_id = await save_summary(
+        
+        summary_id = await _save_summary_to_db(
             user_id=user["id"],
             video_id=video_id,
-            video_title=metadata["title"],
-            video_url=f"https://www.youtube.com/watch?v={video_id}",
-            channel_name=metadata["channel"],
-            duration=metadata["duration"],
-            thumbnail_url=metadata["thumbnail"],
+            metadata=metadata,
             transcript=transcript,
-            summary=summary_text,
-            prompt_preset=preset,
-            model=model,
-            api_endpoint=api_endpoint
+            summary_text=summary_text,
+            preset=preset,
+            model=settings.get("default_model", ""),
+            api_endpoint=settings.get("api_endpoint", "")
         )
+        
         return {"id": summary_id, "summary": summary_text, "video_title": metadata["title"],
                 "channel_name": metadata["channel"], "duration": metadata["duration"],
                 "thumbnail_url": metadata["thumbnail"]}
+    except ValueError as e:
+        return JSONResponse(content={"error": str(e)}, status_code=400)
     except Exception as e:
         print(f"Summarize error: {e}")
         return JSONResponse(content={"error": str(e)}, status_code=500)
@@ -269,24 +368,9 @@ async def summarize_stream(
     user = Depends(require_user)
 ):
     """Extract transcript and stream summary."""
-    video_id = extract_video_id(url)
-    if not video_id:
-        return JSONResponse(content={"error": "Invalid YouTube URL"}, status_code=400)
-
     try:
+        metadata, transcript, prompt, video_id = await _prepare_summarize(url, preset)
         settings = await get_settings()
-        api_token = settings.get("api_token")
-        api_endpoint = settings.get("api_endpoint")
-        model = settings.get("default_model")
-        presets = settings.get("prompt_presets", PROMPT_PRESETS)
-        
-        if not api_token:
-             return JSONResponse(content={"error": "API Token not configured in settings"}, status_code=400)
-
-        prompt = presets.get(preset, presets.get("detailed", "Summarize this."))
-        
-        metadata = await get_video_metadata(video_id)
-        transcript = await get_transcript(video_id)
         
         async def generator():
             full_summary = ""
@@ -302,28 +386,24 @@ async def summarize_stream(
 
             async for chunk in stream_summarize_transcript(
                 transcript=transcript,
-                prompt=f"You are a helpful assistant that summarizes YouTube video transcripts. {prompt}",
-                api_token=api_token,
-                api_endpoint=api_endpoint,
-                model=model
+                prompt=prompt,
+                api_token=settings.get("api_token", ""),
+                api_endpoint=settings.get("api_endpoint", ""),
+                model=settings.get("default_model", "")
             ):
                 full_summary += chunk
                 yield chunk
 
             # After streaming is done, save to DB
-            summary_id = await save_summary(
+            summary_id = await _save_summary_to_db(
                 user_id=user["id"],
                 video_id=video_id,
-                video_title=metadata["title"], 
-                video_url=f"https://www.youtube.com/watch?v={video_id}",
-                channel_name=metadata["channel"],
-                duration=metadata["duration"],
-                thumbnail_url=metadata["thumbnail"],
+                metadata=metadata,
                 transcript=transcript,
-                summary=full_summary,
-                prompt_preset=preset,
-                model=model,
-                api_endpoint=api_endpoint
+                summary_text=full_summary,
+                preset=preset,
+                model=settings.get("default_model", ""),
+                api_endpoint=settings.get("api_endpoint", "")
             )
             # Yield final ID
             yield f"\n[ID:{summary_id}]"
@@ -338,10 +418,15 @@ async def summarize_stream(
             }
         )
         
+    except ValueError as e:
+        return JSONResponse(content={"error": str(e)}, status_code=400)
     except Exception as e:
         print(f"Summarize stream error: {e}")
         return JSONResponse(content={"error": str(e)}, status_code=500)
-
+        
+        async def generator():
+            full_summary = ""
+            # Yield metadata first as a JSON string on the first line
 @app.get("/history", response_class=HTMLResponse)
 async def history(request: Request, q: Optional[str] = None, unread: bool = False, user = Depends(require_user)):
     summaries = await get_summaries(user_id=user["id"], search=q, unread_only=unread)
@@ -477,18 +562,28 @@ async def admin_reset_password(user_id_to_update: int, password: str = Form(...)
 # --- Secure API Endpoints (For Extension ONLY) ---
 
 @app.post("/api/login")
-async def api_login(data: dict):
+async def api_login(request: Request, data: dict):
     """API login for extension to get a token."""
+    client_ip = request.client.host
+    
+    # Check rate limit
+    allowed, error_msg = check_login_rate_limit(client_ip)
+    if not allowed:
+        raise HTTPException(status_code=429, detail=error_msg)
+    
     username = data.get("username")
     password = data.get("password")
     user = await get_user_by_username(username)
     if not user or not verify_password(password, user["password_hash"]):
+        # Record failed attempt for rate limiting
+        record_failed_login(client_ip)
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
     access_token = create_access_token(data={"sub": username})
     return {"access_token": access_token, "token_type": "bearer", "username": username}
 
 @app.post("/api/summarize")
+@rate_limit(max_requests=10, window_seconds=60)
 async def api_summarize(request: Request, user = Depends(require_user)):
     """API endpoint for background summarization (e.g. from extension)."""
     try:
@@ -509,8 +604,8 @@ async def api_summarize(request: Request, user = Depends(require_user)):
         model = settings.get("default_model")
         presets = settings.get("prompt_presets", PROMPT_PRESETS)
         
-        if not api_token:
-             return JSONResponse(content={"error": "API Token not configured"}, status_code=400)
+        if not check_api_token_configured(api_token):
+             return JSONResponse(content={"error": "API Token not configured. Please set your API token in Settings before generating summaries."}, status_code=400)
 
         prompt = presets.get(preset, presets.get("detailed", "Summarize this."))
         metadata = await get_video_metadata(video_id)
@@ -545,12 +640,14 @@ async def api_summarize(request: Request, user = Depends(require_user)):
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
 @app.get("/api/presets")
+@rate_limit(max_requests=10, window_seconds=60)
 async def get_presets_api(user = Depends(require_user)):
     """Return available prompt presets."""
     settings = await get_settings()
     return settings.get("prompt_presets", PROMPT_PRESETS)
 
 @app.get("/api/summary/check")
+@rate_limit(max_requests=10, window_seconds=60)
 async def check_summary_by_url(url: str, user = Depends(require_user)):
     """Check if a video has already been summarized by this user."""
     video_id = extract_video_id(url)
@@ -576,6 +673,7 @@ async def check_summary_by_url(url: str, user = Depends(require_user)):
     return {"exists": False}
 
 @app.delete("/api/summary/{summary_id}")
+@rate_limit(max_requests=10, window_seconds=60)
 async def delete_summary_api(summary_id: int, user = Depends(require_user)):
     await db_delete_summary(summary_id, user["id"])
     return {"success": True}

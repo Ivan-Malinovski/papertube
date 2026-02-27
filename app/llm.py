@@ -1,8 +1,8 @@
 import httpx
 from typing import List, Dict, Any, Optional
 
-DEFAULT_API_ENDPOINT = "https://nano-gpt.com/api/v1"
-DEFAULT_MODEL = "meta-llama/llama-4-maverick"
+DEFAULT_API_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/openai/"
+DEFAULT_MODEL = "gemini-2.0-flash"
 
 
 async def summarize_transcript(

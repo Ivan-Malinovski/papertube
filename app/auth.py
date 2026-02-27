@@ -1,4 +1,5 @@
 import os
+import secrets
 import hashlib
 from datetime import datetime, timedelta
 from typing import Optional, Union, Any
@@ -9,7 +10,7 @@ from fastapi.security import OAuth2PasswordBearer
 from .database import get_user_by_username
 
 # Security configuration
-SECRET_KEY = os.getenv("SECRET_KEY", "papertube-super-secret-key-12345")
+SECRET_KEY = os.getenv("SECRET_KEY") or secrets.token_hex(32)
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 365  # 1 year (stay logged in until manual logout)
 
