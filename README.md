@@ -47,7 +47,9 @@ The included Chromium extension makes this seamless — just hit "Summarize" on 
 ### Docker (Recommended)
 
 ```bash
-docker-compose up -d
+git clone https://github.com/Ivan-Malinovski/papertube.git
+cd papertube
+docker compose up -d --build
 ```
 
 The app will be available at `http://localhost:8080`
