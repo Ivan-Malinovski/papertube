@@ -384,66 +384,64 @@
     </div>
 
     <div class="content">
-        <div id="login-view" class="hidden">
-            <div class="text-center" style="margin-bottom: 20px;">
-                <h2 style="font-size: 1rem; margin-bottom: 8px;">Login Required</h2>
-                <p style="font-size: 0.8rem; color: var(--text-muted);">Please sign in to your accounts</p>
+        <!-- Login view - always visible until logged in -->
+        <div id="login-view">
+            <div class="text-center" style="margin-bottom: 16px;">
+                <h2 style="font-size: 1rem; margin-bottom: 4px;">Welcome to Papertube</h2>
+                <p style="font-size: 0.8rem; color: var(--text-muted);">Enter your server details to continue</p>
+            </div>
+            <div class="form-group">
+                <label for="serverUrl">Server URL</label>
+                <input type="text" id="serverUrl" placeholder="http://localhost:8000">
             </div>
             <div class="form-group">
                 <label for="username">Username</label>
-                <input type="text" id="username" placeholder="Username">
+                <input type="text" id="username" placeholder="Username" autocomplete="username">
             </div>
             <div class="form-group">
                 <label for="password">Password</label>
-                <input type="password" id="password" placeholder="••••••••">
+                <input type="password" id="password" placeholder="••••••••" autocomplete="current-password">
             </div>
             <button id="login-btn" class="btn-primary" style="margin-top: 8px;">Sign In</button>
             <div id="login-status" class="status"></div>
         </div>
 
-        <div id="summary-view" class="hidden">
-            <div class="video-info">
-                <div id="current-title" class="video-title">Loading...</div>
-                <div id="current-channel" class="video-channel"></div>
+        <!-- Main view when logged in -->
+        <div id="main-view" class="hidden">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <span id="logged-in-as" style="font-size: 0.75rem; color: var(--text-muted);"></span>
+                <button id="logout-btn" class="settings-btn" style="padding: 4px 8px; font-size: 0.7rem;">Logout</button>
             </div>
-            <div id="summary-text" class="summary-box">No summary found for this video.</div>
-            <a href="#" id="view-full" class="view-full-link hidden">View Full Summary & Chat →</a>
-        </div>
-
-        <div id="action-view">
-            <div class="form-group">
-                <label for="preset-select">Prompt Preset</label>
-                <select id="preset-select">
-                    <option value="detailed">Detailed</option>
-                    <option value="brief">Brief</option>
-                    <option value="bullets">Bullets</option>
-                </select>
+            
+            <div id="summary-view" class="hidden">
+                <div class="video-info">
+                    <div id="current-title" class="video-title">Loading...</div>
+                    <div id="current-channel" class="video-channel"></div>
+                </div>
+                <div id="summary-text" class="summary-box">No summary found for this video.</div>
+                <a href="#" id="view-full" class="view-full-link hidden">View Full Summary & Chat →</a>
             </div>
-            <button id="summarize-now" class="btn-primary">
-                <span id="btn-default-content">Summarize Now</span>
-                <span id="btn-loading-content" class="hidden" style="display: none;">
-                    <span class="spinner"></span>
-                    <div class="status-anim-container" id="status-container" style="min-width: 120px;">
-                        <span class="status-anim-text active" style="position: relative; display: inline;">Processing...</span>
-                    </div>
-                </span>
-            </button>
-            <div id="status" class="status"></div>
-        </div>
 
-        <div id="settings-view" class="hidden">
-            <div class="form-group" style="margin-top: 8px;">
-                <label for="serverUrl">Server URL</label>
-                <input type="text" id="serverUrl" placeholder="http://localhost:8000">
+            <div id="action-view">
+                <div class="form-group">
+                    <label for="preset-select">Prompt Preset</label>
+                    <select id="preset-select">
+                        <option value="detailed">Detailed</option>
+                        <option value="brief">Brief</option>
+                        <option value="bullets">Bullets</option>
+                    </select>
+                </div>
+                <button id="summarize-now" class="btn-primary">
+                    <span id="btn-default-content">Summarize Now</span>
+                    <span id="btn-loading-content" class="hidden" style="display: none;">
+                        <span class="spinner"></span>
+                        <div class="status-anim-container" id="status-container" style="min-width: 120px;">
+                            <span class="status-anim-text active" style="position: relative; display: inline;">Processing...</span>
+                        </div>
+                    </span>
+                </button>
+                <div id="status" class="status"></div>
             </div>
-            <button id="save-settings" style="width: 100%; padding: 6px; font-size: 0.8rem; cursor: pointer;">Save
-                Server URL</button>
-        </div>
-
-        <div style="text-align: center; margin-top: 16px;">
-            <button id="toggle-settings" class="settings-btn" style="margin: 0 auto;">
-                Config & Settings
-            </button>
         </div>
     </div>
 
