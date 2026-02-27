@@ -55,3 +55,7 @@ logs/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Improvement plans (for delegation)
+IMPROVEMENTS/
+DONE/

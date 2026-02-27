@@ -1,5 +1,7 @@
 from contextlib import asynccontextmanager
 import json
+import re
+import secrets
 from pathlib import Path
 import time
 from typing import Dict, Any, List, Optional, Union
@@ -7,6 +9,8 @@ from typing import Dict, Any, List, Optional, Union
 from fastapi import FastAPI, Request, Form, HTTPException, Depends, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse, FileResponse
 from fastapi.datastructures import Headers
+from pydantic import BaseModel, Field, field_validator, ConfigDict, ValidationError
+from typing import Optional, Any
 import zipfile
 import io
 from fastapi.templating import Jinja2Templates
@@ -16,6 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .transcription import extract_video_id, get_transcript, get_video_metadata
 from .llm import summarize_transcript, stream_summarize_transcript
 from .ratelimit import rate_limit
+from .config import get_login_max_attempts, get_login_lockout_window
 from .database import (
     DEFAULT_SETTINGS,
     init_db,
@@ -45,14 +50,94 @@ from .auth import (
     get_password_hash,
     create_access_token
 )
+from .schemas import LoginRequest, RegisterRequest, SummaryRequest, ChatRequest, AdminUserCreate
+from .db_manager import init_db_pool, get_db_pool, _db_pool
 import aiosqlite
 
+INVALID_TOKEN_PATTERNS = [
+    "sk-your-api-token-here",
+    "sk-placeholder",
+    "your-api-key-here",
+    "replace-me",
+    "changeme",
+    "demo-key",
+    "test-key",
+    "mock-key",
+    "",
+]
+
 def check_api_token_configured(api_token: str | None) -> bool:
-    """Check if the API token is configured (not the default placeholder)."""
+    """
+    Check if the API token is properly configured.
+    
+    Uses timing-safe comparison to prevent timing attacks.
+    Validates format and rejects common placeholder patterns.
+    """
     if not api_token:
         return False
+    
     token = str(api_token).strip()
-    return token != "" and token != "sk-your-api-token-here"
+    
+    if not token:
+        return False
+    
+    if len(token) < 10:
+        return False
+    
+    if len(token) > 500:
+        return False
+    
+    token_lower = token.lower()
+    for pattern in INVALID_TOKEN_PATTERNS:
+        if secrets.compare_digest(token_lower, pattern.lower()):
+            return False
+    
+    if not re.match(r'^[a-zA-Z0-9_\-/.+=]+$', token):
+        return False
+    
+    return True
+
+
+def validate_api_token_format(api_token: str) -> tuple[bool, str]:
+    """
+    Validate API token format with detailed error message.
+    
+    Returns:
+        (is_valid, error_message)
+    """
+    if not api_token:
+        return False, "API token is required"
+    
+    token = str(api_token).strip()
+    
+    if not token:
+        return False, "API token cannot be empty"
+    
+    if len(token) < 10:
+        return False, "API token must be at least 10 characters"
+    
+    if len(token) > 500:
+        return False, "API token is too long (max 500 characters)"
+    
+    token_lower = token.lower()
+    placeholder_patterns = [
+        "sk-your-api-token-here",
+        "sk-placeholder", 
+        "your-api-key-here",
+        "replace-me",
+        "changeme",
+        "demo-key",
+        "test-key",
+    ]
+    
+    for pattern in placeholder_patterns:
+        if secrets.compare_digest(token_lower, pattern.lower()):
+            return False, f"Invalid placeholder token detected"
+    
+    if not re.match(r'^[a-zA-Z0-9_\-/.+=]+$', token):
+        return False, "API token contains invalid characters"
+    
+    return True, ""
 
 
 async def _prepare_summarize(url: str, preset: str) -> tuple[dict, str, str, str]:
@@ -117,7 +202,10 @@ async def _save_summary_to_db(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    await init_db_pool(str(DB_PATH))
     yield
+    if _db_pool:
+        await _db_pool.close_all()
 
 app = FastAPI(
     title="Papertube",
@@ -142,6 +230,18 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 # Templates setup
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
+@app.exception_handler(ValidationError)
+async def validation_exception_handler(request: Request, exc: ValidationError):
+    errors = exc.errors()
+    error_messages = [f"{err['loc'][-1]}: {err['msg']}" for err in errors]
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": "Validation failed",
+            "details": error_messages
+        }
+    )
+
 # --- Auth Routes ---
 
 @app.get("/login", response_class=HTMLResponse)
@@ -157,18 +257,41 @@ async def login_page(request: Request, error: Optional[str] = None, success: Opt
 
 # Login rate limiting (IP-based, before authentication)
 LOGIN_ATTEMPTS: dict[str, list[float]] = {}
-LOGIN_MAX_ATTEMPTS = 5
-LOGIN_LOCKOUT_WINDOW = 900  # 15 minutes
+LOGIN_MAX_ATTEMPTS = get_login_max_attempts()
+LOGIN_LOCKOUT_WINDOW = get_login_lockout_window()
+LOGIN_CLEANUP_THRESHOLD = 3600  # 1 hour
+
+def _cleanup_login_attempts():
+    """Remove old IP entries from login attempts to prevent memory leak."""
+    now = time.time()
+    expired_ips = [
+        ip for ip, attempts in LOGIN_ATTEMPTS.items()
+        if not attempts or (now - max(attempts)) > LOGIN_CLEANUP_THRESHOLD
+    ]
+    for ip in expired_ips:
+        del LOGIN_ATTEMPTS[ip]
 
 def check_login_rate_limit(client_ip: str) -> tuple[bool, str]:
     """Check if IP is rate limited for login. Returns (is_allowed, error_message)."""
+    # Periodic cleanup
+    if len(LOGIN_ATTEMPTS) > 0 and sum(len(a) for a in LOGIN_ATTEMPTS.values()) % 50 == 0:
+        _cleanup_login_attempts()
+    
     now = time.time()
     attempts = LOGIN_ATTEMPTS.get(client_ip, [])
-    # Clean old attempts outside the window
-    attempts = [t for t in attempts if now - t < LOGIN_LOCKOUT_WINDOW]
+    # Clean old attempts outside the window (FIX: use <=)
+    attempts = [t for t in attempts if now - t <= LOGIN_LOCKOUT_WINDOW]
     
     if len(attempts) >= LOGIN_MAX_ATTEMPTS:
-        remaining = LOGIN_LOCKOUT_WINDOW - (now - min(attempts))
+        # FIX: Use max(attempts) instead of min(attempts)
+        latest_attempt = max(attempts)
+        remaining = LOGIN_LOCKOUT_WINDOW - (now - latest_attempt)
+        
+        # Ensure we don't show negative or zero
+        if remaining <= 0:
+            LOGIN_ATTEMPTS[client_ip] = []
+            return True, ""
+        
         minutes = int(remaining / 60) + 1
         return False, f"Too many login attempts. Please try again in {minutes} minutes."
     
@@ -180,23 +303,33 @@ def record_failed_login(client_ip: str):
     """Record a failed login attempt for rate limiting."""
     now = time.time()
     attempts = LOGIN_ATTEMPTS.get(client_ip, [])
-    attempts = [t for t in attempts if now - t < LOGIN_LOCKOUT_WINDOW]
+    attempts = [t for t in attempts if now - t <= LOGIN_LOCKOUT_WINDOW]
     attempts.append(now)
     LOGIN_ATTEMPTS[client_ip] = attempts
 
 @app.post("/login")
 async def login(request: Request, username: str = Form(...), password: str = Form(...)):
-    client_ip = request.client.host
+    try:
+        form_data = LoginRequest(username=username, password=password)
+    except ValidationError as e:
+        errors = e.errors()
+        error_messages = [f"{err['loc'][-1]}: {err['msg']}" for err in errors]
+        return JSONResponse(
+            status_code=422,
+            content={"error": "Validation failed", "details": error_messages}
+        )
+    
+    client_ip = request.client.host if request.client else "127.0.0.1"
     
     # Check rate limit
     allowed, error_msg = check_login_rate_limit(client_ip)
     if not allowed:
         return RedirectResponse(url=f"/login?error={error_msg.replace(' ', '+')}", status_code=status.HTTP_303_SEE_OTHER)
     
-    user = await get_user_by_username(username)
+    user = await get_user_by_username(form_data.username)
     next_url = request.query_params.get("next") or "/"
     
-    if not user or not verify_password(password, user["password_hash"]):
+    if not user or not verify_password(form_data.password, user["password_hash"]):
         # Record failed attempt for rate limiting
         record_failed_login(client_ip)
         # Preserve 'next' on error
@@ -205,7 +338,7 @@ async def login(request: Request, username: str = Form(...), password: str = For
             error_url += f"&next={next_url}"
         return RedirectResponse(url=error_url, status_code=status.HTTP_303_SEE_OTHER)
     
-    access_token = create_access_token(data={"sub": username})
+    access_token = create_access_token(data={"sub": form_data.username})
     redirect = RedirectResponse(url=next_url, status_code=status.HTTP_303_SEE_OTHER)
     # Set cookie for web UI
     redirect.set_cookie(key="access_token", value=f"Bearer {access_token}", httponly=True)
@@ -231,14 +364,24 @@ async def register_page(request: Request):
     })
 
 @app.post("/register")
-async def register(username: str = Form(...), password: str = Form(...), full_name: str = Form("")):
+async def register(request: Request, username: str = Form(...), password: str = Form(...), full_name: str = Form("")):
+    try:
+        form_data = RegisterRequest(username=username, password=password, full_name=full_name)
+    except ValidationError as e:
+        errors = e.errors()
+        error_messages = [f"{err['loc'][-1]}: {err['msg']}" for err in errors]
+        return JSONResponse(
+            status_code=422,
+            content={"error": "Validation failed", "details": error_messages}
+        )
+    
     # Only allow registration if no users exist
     try:
         count = await get_user_count()
         if count > 0:
             raise HTTPException(status_code=403, detail="Registration is disabled")
         
-        await create_user(username, get_password_hash(password), full_name, is_admin=True)
+        await create_user(form_data.username, get_password_hash(form_data.password), form_data.full_name, is_admin=True)
         return RedirectResponse(url="/login?success=Account+created!+Please+login.", status_code=status.HTTP_303_SEE_OTHER)
     except Exception as e:
         print(f"Registration error: {e}")
@@ -278,13 +421,24 @@ async def get_video_info(url: str, user = Depends(require_user)):
 @app.post("/api/chat")
 @rate_limit(max_requests=10, window_seconds=60)
 async def chat(
+    request: Request,
     id: int = Form(...),
     message: str = Form(...),
     user = Depends(require_user)
 ):
     """Stream a chat response about a specific summary using the transcript as context."""
     try:
-        summary = await get_summary(id)
+        form_data = ChatRequest(id=id, message=message)
+    except ValidationError as e:
+        errors = e.errors()
+        error_messages = [f"{err['loc'][-1]}: {err['msg']}" for err in errors]
+        return JSONResponse(
+            status_code=422,
+            content={"error": "Validation failed", "details": error_messages}
+        )
+    
+    try:
+        summary = await get_summary(form_data.id)
         if not summary or summary["user_id"] != user["id"]:
             return JSONResponse(status_code=404, content={"error": "Summary not found"})
         
@@ -305,7 +459,7 @@ async def chat(
 
         async def generator():
             async for chunk in stream_summarize_transcript(
-                transcript=message,
+                transcript=form_data.message,
                 prompt=system_prompt,
                 api_token=api_token,
                 api_endpoint=api_endpoint,
@@ -324,13 +478,24 @@ async def chat(
 
 @app.post("/summarize")
 async def summarize_legacy(
+    request: Request,
     url: str = Form(...),
     preset: str = Form("detailed"),
     user = Depends(require_user)
 ):
     """Non-streaming summarize for re-summarize from summary page."""
     try:
-        metadata, transcript, prompt, video_id = await _prepare_summarize(url, preset)
+        form_data = SummaryRequest(url=url, preset=preset)
+    except ValidationError as e:
+        errors = e.errors()
+        error_messages = [f"{err['loc'][-1]}: {err['msg']}" for err in errors]
+        return JSONResponse(
+            status_code=422,
+            content={"error": "Validation failed", "details": error_messages}
+        )
+    
+    try:
+        metadata, transcript, prompt, video_id = await _prepare_summarize(form_data.url, form_data.preset)
         settings = await get_settings()
         
         summary_text = await summarize_transcript(
@@ -347,7 +512,7 @@ async def summarize_legacy(
             metadata=metadata,
             transcript=transcript,
             summary_text=summary_text,
-            preset=preset,
+            preset=form_data.preset,
             model=settings.get("default_model", ""),
             api_endpoint=settings.get("api_endpoint", "")
         )
@@ -363,13 +528,24 @@ async def summarize_legacy(
 
 @app.post("/summarize/stream")
 async def summarize_stream(
+    request: Request,
     url: str = Form(...),
     preset: str = Form("detailed"),
     user = Depends(require_user)
 ):
     """Extract transcript and stream summary."""
     try:
-        metadata, transcript, prompt, video_id = await _prepare_summarize(url, preset)
+        form_data = SummaryRequest(url=url, preset=preset)
+    except ValidationError as e:
+        errors = e.errors()
+        error_messages = [f"{err['loc'][-1]}: {err['msg']}" for err in errors]
+        return JSONResponse(
+            status_code=422,
+            content={"error": "Validation failed", "details": error_messages}
+        )
+    
+    try:
+        metadata, transcript, prompt, video_id = await _prepare_summarize(form_data.url, form_data.preset)
         settings = await get_settings()
         
         async def generator():
@@ -401,7 +577,7 @@ async def summarize_stream(
                 metadata=metadata,
                 transcript=transcript,
                 summary_text=full_summary,
-                preset=preset,
+                preset=form_data.preset,
                 model=settings.get("default_model", ""),
                 api_endpoint=settings.get("api_endpoint", "")
             )
@@ -506,16 +682,27 @@ async def admin_users(request: Request, user = Depends(require_user)):
 
 @app.post("/admin/users/create")
 async def admin_create_user(
+    request: Request,
     username: str = Form(...),
     password: str = Form(...),
     full_name: str = Form(""),
     is_admin: bool = Form(False),
     user = Depends(require_user)
 ):
+    try:
+        form_data = AdminUserCreate(username=username, password=password, full_name=full_name, is_admin=is_admin)
+    except ValidationError as e:
+        errors = e.errors()
+        error_messages = [f"{err['loc'][-1]}: {err['msg']}" for err in errors]
+        return JSONResponse(
+            status_code=422,
+            content={"error": "Validation failed", "details": error_messages}
+        )
+    
     if not user.get("is_admin"):
         raise HTTPException(status_code=403, detail="Not authorized")
         
-    await create_user(username, get_password_hash(password), full_name, is_admin)
+    await create_user(form_data.username, get_password_hash(form_data.password), form_data.full_name, form_data.is_admin)
     return RedirectResponse(url="/admin/users?success=User+created!", status_code=status.HTTP_303_SEE_OTHER)
 
 @app.post("/admin/users/delete/{user_id_to_delete}")
@@ -546,6 +733,10 @@ async def admin_toggle_role(user_id_to_update: int, is_admin: bool = Form(...), 
 async def admin_update_user(user_id_to_update: int, full_name: str = Form(...), user = Depends(require_user)):
     if not user.get("is_admin"):
         raise HTTPException(status_code=403, detail="Not authorized")
+    
+    full_name = full_name.strip()
+    if len(full_name) > 100:
+        full_name = full_name[:100]
         
     await update_user_profile(user_id_to_update, full_name)
     return RedirectResponse(url="/admin/users?success=Profile+updated!", status_code=status.HTTP_303_SEE_OTHER)
@@ -554,6 +745,11 @@ async def admin_update_user(user_id_to_update: int, full_name: str = Form(...), 
 async def admin_reset_password(user_id_to_update: int, password: str = Form(...), user = Depends(require_user)):
     if not user.get("is_admin"):
         raise HTTPException(status_code=403, detail="Not authorized")
+    
+    if len(password) < 8:
+        return RedirectResponse(url="/admin/users?error=Password+must+be+at+least+8+characters!", status_code=status.HTTP_303_SEE_OTHER)
+    if len(password) > 128:
+        password = password[:128]
         
     await update_user_password(user_id_to_update, get_password_hash(password))
     return RedirectResponse(url="/admin/users?success=Password+reset+successfully!", status_code=status.HTTP_303_SEE_OTHER)
@@ -564,7 +760,7 @@ async def admin_reset_password(user_id_to_update: int, password: str = Form(...)
 @app.post("/api/login")
 async def api_login(request: Request, data: dict):
     """API login for extension to get a token."""
-    client_ip = request.client.host
+    client_ip = request.client.host if request.client else "127.0.0.1"
     
     # Check rate limit
     allowed, error_msg = check_login_rate_limit(client_ip)
@@ -659,7 +855,8 @@ async def check_summary_by_url(url: str, user = Depends(require_user)):
     if not video_id:
         return {"exists": False}
     
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    pool = await get_db_pool(str(DB_PATH))
+    async with pool.get_connection() as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
             "SELECT id, summary, video_title, channel_name FROM summaries WHERE video_id = ? AND user_id = ? ORDER BY created_at DESC LIMIT 1",

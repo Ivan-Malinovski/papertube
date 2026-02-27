@@ -116,9 +116,45 @@ Add your own custom presets in Settings.
 
 ## Environment Variables
 
+Copy `.env.example` to `.env` and configure:
+
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SECRET_KEY` | (random) | JWT secret key |
+| `PAPERTUBE_SECRET_KEY` | (random) | JWT secret key |
+| `PAPERTUBE_HOST` | 0.0.0.0 | Server host |
+| `PAPERTUBE_PORT` | 8080 | Server port |
+| `PAPERTUBE_LOGIN_MAX_ATTEMPTS` | 5 | Max login attempts before lockout |
+| `PAPERTUBE_LOGIN_LOCKOUT_WINDOW` | 900 | Lockout duration in seconds |
+| `PAPERTUBE_API_RATE_LIMIT_MAX_REQUESTS` | 10 | API rate limit |
+| `PAPERTUBE_API_RATE_LIMIT_WINDOW_SECONDS` | 60 | Rate limit window in seconds |
+| `PAPERTUBE_DEFAULT_API_ENDPOINT` | (Google AI) | LLM API endpoint |
+| `PAPERTUBE_DEFAULT_MODEL` | gemini-2.0-flash | Default LLM model |
+| `PAPERTUBE_DATABASE_PATH` | data/summaries.db | Database file path |
+
+## Testing
+
+```bash
+# Activate virtual environment
+source venv/bin/activate
+
+# Run all tests
+pytest tests/ -v
+
+# Run with coverage
+pytest tests/ --cov=app --cov-report=term-missing
+
+# Run tests in parallel (requires pytest-xdist)
+pytest tests/ -n auto
+```
+
+The test suite includes 98 tests covering:
+- Authentication (JWT, password hashing, login rate limiting)
+- Database operations (users, summaries, settings)
+- Input validation (Pydantic schemas, validators)
+- Configuration management
+- API rate limiting
+- YouTube URL validation and video ID extraction
+- LLM integration
 
 ## Credits
 
