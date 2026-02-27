@@ -1211,3 +1211,19 @@ textarea:focus {
     opacity: 0;
     transform: translateY(-100%);
 }
+
+/* --- Summary Navigation Cards --- */
+.summary-nav-card {
+    background-color: var(--card-bg);
+}
+
+.summary-nav-card:hover {
+    background-color: var(--border-color);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="dark"] .summary-nav-card:hover {
+    background-color: #334155;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}

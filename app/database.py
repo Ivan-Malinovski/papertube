@@ -311,3 +311,39 @@ async def mark_summary_read(summary_id: int, user_id: int, is_read: bool = True)
         )
         await db.commit()
     return True
+
+
+async def get_adjacent_summaries(user_id: int, current_id: int) -> Dict[str, Optional[Dict[str, Any]]]:
+    """Get the next (older) and previous (newer) summaries for navigation."""
+    result = {"next": None, "prev": None}
+
+    async with aiosqlite.connect(str(DB_PATH)) as db:
+        db.row_factory = aiosqlite.Row
+
+        # Get current summary's created_at
+        cursor = await db.execute("SELECT created_at FROM summaries WHERE id = ? AND user_id = ?", (current_id, user_id))
+        row = await cursor.fetchone()
+        if not row:
+            return result
+
+        current_created = row["created_at"]
+
+        # Next: older summary (created_at < current), get the most recent of those
+        cursor = await db.execute(
+            "SELECT id, video_title FROM summaries WHERE user_id = ? AND created_at < ? ORDER BY created_at DESC LIMIT 1",
+            (user_id, current_created)
+        )
+        next_row = await cursor.fetchone()
+        if next_row:
+            result["next"] = {"id": next_row["id"], "video_title": next_row["video_title"]}
+
+        # Prev: newer summary (created_at > current), get the oldest of those
+        cursor = await db.execute(
+            "SELECT id, video_title FROM summaries WHERE user_id = ? AND created_at > ? ORDER BY created_at ASC LIMIT 1",
+            (user_id, current_created)
+        )
+        prev_row = await cursor.fetchone()
+        if prev_row:
+            result["prev"] = {"id": prev_row["id"], "video_title": prev_row["video_title"]}
+
+    return result

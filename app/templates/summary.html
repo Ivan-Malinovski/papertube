@@ -110,6 +110,35 @@
             </button>
         </div>
     </div>
+
+    <!-- Navigation between summaries -->
+    {% if nav.next or nav.prev %}
+    <div class="summary-nav" style="display: flex; gap: 1rem; margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--border-color);">
+        {% if nav.prev %}
+        <a href="/summary/{{ nav.prev.id }}" class="summary-nav-card" style="flex: 1; padding: 1rem; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; text-decoration: none; transition: all 0.2s;">
+            <div style="display: flex; align-items: center; gap: 0.5rem; color: var(--muted-text); font-size: 0.75rem; margin-bottom: 0.5rem;">
+                <i data-lucide="chevron-left" style="width: 16px; height: 16px;"></i>
+                <span>Newer</span>
+            </div>
+            <div style="color: var(--text-color); font-weight: 600; font-size: 0.9rem; line-height: 1.4;">{{ nav.prev.video_title[:60] }}{% if nav.prev.video_title|length > 60 %}...{% endif %}</div>
+        </a>
+        {% else %}
+        <div style="flex: 1;"></div>
+        {% endif %}
+
+        {% if nav.next %}
+        <a href="/summary/{{ nav.next.id }}" class="summary-nav-card" style="flex: 1; padding: 1rem; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; text-decoration: none; text-align: right; transition: all 0.2s;">
+            <div style="display: flex; align-items: center; justify-content: flex-end; gap: 0.5rem; color: var(--muted-text); font-size: 0.75rem; margin-bottom: 0.5rem;">
+                <span>Older</span>
+                <i data-lucide="chevron-right" style="width: 16px; height: 16px;"></i>
+            </div>
+            <div style="color: var(--text-color); font-weight: 600; font-size: 0.9rem; line-height: 1.4;">{{ nav.next.video_title[:60] }}{% if nav.next.video_title|length > 60 %}...{% endif %}</div>
+        </a>
+        {% else %}
+        <div style="flex: 1;"></div>
+        {% endif %}
+    </div>
+    {% endif %}
 </div>
 {% endblock %}
 

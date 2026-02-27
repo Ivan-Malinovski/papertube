@@ -20,6 +20,7 @@ from .database import (
     get_settings,
     update_setting,
     mark_summary_read,
+    get_adjacent_summaries,
     PROMPT_PRESETS,
     get_user_by_username,
     create_user,
@@ -356,16 +357,20 @@ async def view_summary(request: Request, summary_id: int, user = Depends(require
     summary = await get_summary(summary_id)
     if not summary or summary["user_id"] != user["id"]:
         raise HTTPException(status_code=404, detail="Summary not found")
-    
+
     # Mark as read
     await mark_summary_read(summary_id, user["id"])
-    
+
+    # Get adjacent summaries for navigation
+    nav = await get_adjacent_summaries(user["id"], summary_id)
+
     settings = await get_settings()
     return templates.TemplateResponse("summary.html", {
-        "request": request, 
+        "request": request,
         "summary": summary,
         "user": user,
-        "settings": settings
+        "settings": settings,
+        "nav": nav
     })
 
 @app.get("/settings", response_class=HTMLResponse)
