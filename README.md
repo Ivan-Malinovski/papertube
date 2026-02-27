@@ -83,6 +83,12 @@ Add your own custom presets in Settings.
 |----------|---------|-------------|
 | `SECRET_KEY` | (random) | JWT secret key |
 
+## Disclaimer
+
+**This project is entirely vibe-coded.** While reasonable precautions have been taken to implement security measures (authentication, input validation, etc.), this was built quickly with AI assistance and has not undergone formal security auditing.
+
+**⚠️ Recommendation:** Do not run Papertube on a public-facing server. It's designed for local/self-hosted use on trusted networks. If you do expose it publicly, you do so at your own risk.
+
 ## License
 
-MIT
+GPL
