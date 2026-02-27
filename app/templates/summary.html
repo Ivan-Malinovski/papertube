@@ -345,6 +345,24 @@
 
         document.getElementById('send-chat-btn').addEventListener('click', sendMessage);
         chatInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMessage(); });
+
+        // Keyboard navigation between summaries
+        document.addEventListener('keydown', (e) => {
+            // Don't navigate if typing in an input
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+            {% if nav.prev %}
+            if (e.key === 'ArrowLeft') {
+                window.location.href = '/summary/{{ nav.prev.id }}';
+            }
+            {% endif %}
+
+            {% if nav.next %}
+            if (e.key === 'ArrowRight') {
+                window.location.href = '/summary/{{ nav.next.id }}';
+            }
+            {% endif %}
+        });
     });
 </script>
 {% endblock %}
