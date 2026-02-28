@@ -7,6 +7,9 @@ WORKDIR /app
 # Install system dependencies - curl needed for healthcheck
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 
+# Copy requirements file first to leverage Docker cache
+COPY requirements.txt .
+
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -22,7 +25,7 @@ ENV PYTHONUNBUFFERED=1
 # Expose port 8000
 EXPOSE 8000
 
-# Health check for container monitoring
+# Health check using /api/ping endpoint
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:8000/api/ping || exit 1
 

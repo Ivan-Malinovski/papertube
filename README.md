@@ -54,20 +54,6 @@ docker compose up -d --build
 
 The app will be available at `http://localhost:8080`
 
-### Unraid
-
-1. Download the [Unraid template](unraid-template.xml)
-2. Go to **Settings → Docker → Add Container → Upload template**
-3. Generate a secret key:
-   ```bash
-   python -c "import secrets; print(secrets.token_hex(32))"
-   ```
-4. Enter the secret key in the template configuration
-5. Set the container storage path to persist data
-6. Start the container
-
-The app will be available at `http://<your-unraid-ip>:8080`
-
 ### Manual Setup
 
 ```bash
