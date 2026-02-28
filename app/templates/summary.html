@@ -81,12 +81,7 @@
         </button>
     </div>
 
-    <div id="summary-content" class="summary-content prose"
-        style="border-top: 1px solid var(--border-color); padding-top: 1.5rem;">
-    </div>
-    <script id="summary-raw" type="application/json">{{ summary.summary | tojson }}</script>
-
-    <!-- Chat UI -->
+    <!-- Chat UI - Inline under the button -->
     <div id="chat-ui" class="chat-container">
         <div class="chat-header">
             <div class="flex items-center gap-2">
@@ -110,6 +105,11 @@
             </button>
         </div>
     </div>
+
+    <div id="summary-content" class="summary-content prose"
+        style="border-top: 1px solid var(--border-color); padding-top: 1.5rem;">
+    </div>
+    <script id="summary-raw" type="application/json">{{ summary.summary | tojson }}</script>
 
     <!-- Navigation between summaries -->
     {% if nav.next or nav.prev %}
@@ -257,12 +257,36 @@
         const chatUi = document.getElementById('chat-ui');
         const chatInput = document.getElementById('chat-input');
         const chatMessages = document.getElementById('chat-messages');
+        let isChatOpen = false;
 
         document.getElementById('toggle-chat-btn').addEventListener('click', () => {
-            chatUi.classList.add('active');
-            chatInput.focus();
+            if (isChatOpen) {
+                // Hide with animation
+                chatUi.classList.remove('active');
+                chatUi.classList.add('hiding');
+                setTimeout(() => {
+                    chatUi.classList.remove('hiding');
+                    isChatOpen = false;
+                }, 300);
+            } else {
+                // Show
+                chatUi.classList.add('hiding');
+                chatUi.classList.add('active');
+                setTimeout(() => {
+                    chatUi.classList.remove('hiding');
+                    isChatOpen = true;
+                }, 10);
+                chatInput.focus();
+            }
         });
-        document.getElementById('close-chat-btn').addEventListener('click', () => chatUi.classList.remove('active'));
+        document.getElementById('close-chat-btn').addEventListener('click', () => {
+            chatUi.classList.remove('active');
+            chatUi.classList.add('hiding');
+            setTimeout(() => {
+                chatUi.classList.remove('hiding');
+                isChatOpen = false;
+            }, 300);
+        });
 
         async function sendMessage() {
             const msg = chatInput.value.trim();
