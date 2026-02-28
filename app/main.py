@@ -905,6 +905,9 @@ async def download_extension(request: Request, user = Depends(require_user)):
     
     # Get the server URL from the request for the default server URL in popup.js
     server_url = str(request.base_url).rstrip('/')
+    # Default to https for non-localhost deployments
+    if not server_url.startswith("http://localhost") and not server_url.startswith("http://127.0.0.1"):
+        server_url = server_url.replace("http://", "https://", 1)
 
     # Create a ZIP file in memory
     zip_buffer = io.BytesIO()
@@ -939,6 +942,9 @@ async def download_extension_firefox(request: Request, user = Depends(require_us
     
     # Get the server URL from the request for the default server URL in popup.js
     server_url = str(request.base_url).rstrip('/')
+    # Default to https for non-localhost deployments
+    if not server_url.startswith("http://localhost") and not server_url.startswith("http://127.0.0.1"):
+        server_url = server_url.replace("http://", "https://", 1)
 
     # Create a ZIP file in memory
     zip_buffer = io.BytesIO()
