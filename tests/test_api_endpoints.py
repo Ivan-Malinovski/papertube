@@ -116,3 +116,31 @@ class TestWebRoutes:
         response = app_client.get("/register")
         
         assert response.status_code == 200
+
+
+class TestSummarizeStream:
+    """Tests for /summarize/stream endpoint."""
+    
+    def test_summarize_stream_requires_auth(self, app_client):
+        """Test summarize/stream requires authentication."""
+        response = app_client.post("/summarize/stream", data={
+            "url": "https://youtube.com/watch?v=test",
+            "preset": "detailed"
+        })
+        
+        assert response.status_code in [401, 403]
+    
+    @pytest.mark.asyncio
+    async def test_summarize_stream_invalid_url(self, db_with_user, app_client):
+        """Test summarize/stream with invalid URL returns validation error."""
+        from app.auth import create_access_token
+        
+        token = create_access_token(data={"sub": "testuser"})
+        
+        response = app_client.post(
+            "/summarize/stream",
+            data={"url": "not-a-youtube-url", "preset": "detailed"},
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        
+        assert response.status_code == 422

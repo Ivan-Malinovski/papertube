@@ -72,7 +72,7 @@ function injectButton() {
             preset: preset,
             token: token
         }, (response) => {
-            if (response && response.success) {
+            if (response && response.started) {
                 summarizeBtn.innerHTML = '<span style="color: #10b981;">Sent!</span>';
                 setTimeout(() => {
                     summarizeBtn.innerHTML = originalHtml;
