@@ -45,7 +45,7 @@ class Settings(BaseSettings):
         description="Default LLM API endpoint"
     )
     default_model: str = Field(
-        default="gemini-2.0-flash",
+        default="gemini-2.5-flash",
         description="Default LLM model"
     )
     

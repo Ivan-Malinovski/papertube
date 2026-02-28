@@ -778,8 +778,17 @@ async def api_login(request: Request, data: dict):
 
 @app.get("/api/ping")
 async def api_ping():
-    """Simple ping endpoint to test server connectivity (no auth required)."""
-    return {"ok": True}
+    """Health check endpoint to test server and database connectivity (no auth required)."""
+    try:
+        pool = await get_db_pool(str(DB_PATH))
+        async with pool.get_connection() as db:
+            await db.execute("SELECT 1")
+        return {"ok": True, "database": "connected"}
+    except Exception as e:
+        return JSONResponse(
+            status_code=503,
+            content={"ok": False, "database": "disconnected", "error": str(e)}
+        )
 
 @app.post("/api/summarize")
 @rate_limit(max_requests=10, window_seconds=60)

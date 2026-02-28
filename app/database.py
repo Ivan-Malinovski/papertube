@@ -19,7 +19,7 @@ PROMPT_PRESETS = {
 DEFAULT_SETTINGS = {
     "api_endpoint": "https://generativelanguage.googleapis.com/v1beta/openai/",
     "api_token": "sk-your-api-token-here",
-    "default_model": "gemini-2.0-flash",
+    "default_model": "gemini-2.5-flash",
     "dark_mode": "false",
     "prompt_presets": json.dumps(PROMPT_PRESETS)
 }

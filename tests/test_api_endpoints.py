@@ -12,7 +12,9 @@ class TestApiPing:
         response = app_client.get("/api/ping")
         
         assert response.status_code == 200
-        assert response.json() == {"ok": True}
+        data = response.json()
+        assert data["ok"] is True
+        assert data["database"] == "connected"
     
     def test_ping_returns_json(self, app_client):
         """Test ping returns JSON."""

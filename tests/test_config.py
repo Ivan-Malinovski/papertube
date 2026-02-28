@@ -34,7 +34,7 @@ class TestSettingsDefaults:
         settings = Settings()
         
         assert "google" in settings.default_api_endpoint.lower()
-        assert settings.default_model == "gemini-2.0-flash"
+        assert settings.default_model == "gemini-2.5-flash"
     
     def test_secret_key_generated(self):
         """Test secret key is generated if not provided."""
