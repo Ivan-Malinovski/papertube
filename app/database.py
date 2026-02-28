@@ -100,6 +100,11 @@ async def init_db() -> None:
 
         await db.commit()
 
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_summaries_user_created ON summaries(user_id, created_at DESC)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_summaries_video_user ON summaries(video_id, user_id)")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_video_cache_cached ON video_cache(cached_at)")
+        await db.commit()
+
         # Initialize default settings if empty
         cursor = await db.execute("SELECT COUNT(*) FROM settings")
         count_row = await cursor.fetchone()

@@ -599,10 +599,8 @@ async def summarize_stream(
     except Exception as e:
         print(f"Summarize stream error: {e}")
         return JSONResponse(content={"error": str(e)}, status_code=500)
-        
-        async def generator():
-            full_summary = ""
-            # Yield metadata first as a JSON string on the first line
+
+
 @app.get("/history", response_class=HTMLResponse)
 async def history(request: Request, q: Optional[str] = None, unread: bool = False, user = Depends(require_user)):
     summaries = await get_summaries(user_id=user["id"], search=q, unread_only=unread)
