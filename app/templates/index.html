@@ -40,8 +40,8 @@
                 <div id="btn-loading-content" class="hidden items-center justify-center gap-2 w-full">
                     <span class="spinner" style="width: 16px; height: 16px; border-width: 2px;"></span>
                     <div class="status-anim-container search-transition" id="status-container"
-                        style="width: 135px; min-width: 135px;">
-                        <span class="status-anim-text active" style="font-size: 0.85rem;">Processing...</span>
+                        style="width: 135px; min-width: 135px; font-size: 0.85rem;">
+                        Processing...
                     </div>
                 </div>
             </button>
@@ -341,21 +341,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let currentStep = 0;
         const updateStatus = () => {
-            const currentEl = statusContainer.querySelector('.status-anim-text.active');
             if (currentStep < steps.length) {
-                if (currentEl) {
-                    currentEl.classList.remove('active');
-                    currentEl.classList.add('exit');
-                    setTimeout(() => currentEl.remove(), 400);
-                }
-
-                setTimeout(() => {
-                    const nextEl = document.createElement('span');
-                    nextEl.className = 'status-anim-text active';
-                    nextEl.textContent = steps[currentStep];
-                    statusContainer.appendChild(nextEl);
-                    currentStep++;
-                }, 100);
+                statusContainer.textContent = steps[currentStep];
+                currentStep++;
             }
         };
 
